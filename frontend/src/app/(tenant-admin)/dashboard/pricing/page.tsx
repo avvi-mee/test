@@ -625,7 +625,7 @@ export default function PricingPage() {
                 <div className="flex items-center space-x-4">
                     {config?.lastUpdated && (
                         <p className="text-[10px] text-gray-400 uppercase font-bold">
-                            Last Updated: {config.lastUpdated?.toDate().toLocaleString()}
+                            Last Updated: {config.lastUpdated?.toDate ? config.lastUpdated.toDate().toLocaleString() : "Not saved yet"}
                         </p>
                     )}
                     <Button

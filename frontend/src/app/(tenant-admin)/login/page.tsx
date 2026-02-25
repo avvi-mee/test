@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useTenantAuth } from "@/hooks/useTenantAuth";
 import { Lock, User, Briefcase } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { collectionGroup, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export default function TenantLoginPage() {
@@ -53,37 +53,36 @@ export default function TenantLoginPage() {
         setEmployeeError("");
 
         try {
-            // Search for employee across all tenants
-            const employeesRef = collectionGroup(db, "employees");
-            const q = query(employeesRef, where("email", "==", email));
-            const querySnapshot = await getDocs(q);
+            // Get all tenants, then search each tenant's employees subcollection
+            const tenantsSnapshot = await getDocs(collection(db, "tenants"));
 
-            if (querySnapshot.empty) {
-                setEmployeeError("No employee account found with this email.");
-                setEmployeeLoading(false);
-                return;
-            }
-
-            // Verify Password (Simple check for prototype)
-            let inputsValid = false;
+            let emailFound = false;
             let employeeData = null;
 
-            querySnapshot.forEach((doc) => {
-                const data = doc.data();
-                if (data.password === password) {
-                    inputsValid = true;
-                    // Ensure tenantId is available (fallback to path extraction for older records)
-                    const tenantId = data.tenantId || doc.ref.parent.parent?.id;
-                    employeeData = { id: doc.id, ...data, tenantId };
-                }
-            });
+            for (const tenantDoc of tenantsSnapshot.docs) {
+                const employeesRef = collection(db, "tenants", tenantDoc.id, "employees");
+                const q = query(employeesRef, where("email", "==", email));
+                const empSnapshot = await getDocs(q);
 
-            if (inputsValid && employeeData) {
-                // Set Session
+                if (!empSnapshot.empty) {
+                    emailFound = true;
+                    empSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        if (data.password === password) {
+                            employeeData = { id: doc.id, ...data, tenantId: tenantDoc.id };
+                        }
+                    });
+                    break;
+                }
+            }
+
+            if (employeeData) {
                 sessionStorage.setItem("employeeSession", JSON.stringify(employeeData));
                 router.push("/employee-dashboard");
             } else {
-                setEmployeeError("Invalid credentials. Please check your email and password.");
+                setEmployeeError(emailFound
+                    ? "Invalid credentials. Please check your email and password."
+                    : "No employee account found with this email.");
             }
         } catch (error) {
             console.error("Employee login error:", error);
