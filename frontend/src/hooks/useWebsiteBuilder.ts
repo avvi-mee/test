@@ -28,6 +28,8 @@ import type {
     Service,
     WhyChooseUsItem,
     TeamMember,
+    CustomContentSection,
+    CustomPage,
 } from "@/types/website";
 
 // ============================================
@@ -234,6 +236,7 @@ export function useHomePage(tenantId: string | null) {
                             buttonText: "",
                             buttonLink: "",
                         },
+                        customSections: [],
                     });
                 }
                 setLoading(false);
@@ -429,6 +432,46 @@ export function useHomePage(tenantId: string | null) {
         return saveHomeContent({ whyChooseUs: updatedItems });
     };
 
+    // Custom Content Sections
+    const addCustomSection = async (
+        section: Omit<CustomContentSection, "id" | "order">
+    ): Promise<boolean> => {
+        if (!homeContent) return false;
+
+        const sections = homeContent.customSections || [];
+        const newSection: CustomContentSection = {
+            ...section,
+            id: `section_${Date.now()}`,
+            order: sections.length,
+        };
+
+        return saveHomeContent({
+            customSections: [...sections, newSection],
+        });
+    };
+
+    const updateCustomSection = async (
+        sectionId: string,
+        updates: Partial<CustomContentSection>
+    ): Promise<boolean> => {
+        if (!homeContent) return false;
+
+        const sections = homeContent.customSections || [];
+        const updatedSections = sections.map((s) =>
+            s.id === sectionId ? { ...s, ...updates } : s
+        );
+
+        return saveHomeContent({ customSections: updatedSections });
+    };
+
+    const deleteCustomSection = async (sectionId: string): Promise<boolean> => {
+        if (!homeContent) return false;
+
+        const sections = homeContent.customSections || [];
+        const updatedSections = sections.filter((s) => s.id !== sectionId);
+        return saveHomeContent({ customSections: updatedSections });
+    };
+
     return {
         homeContent,
         loading,
@@ -445,6 +488,169 @@ export function useHomePage(tenantId: string | null) {
         addWhyChooseUs,
         updateWhyChooseUs,
         deleteWhyChooseUs,
+        addCustomSection,
+        updateCustomSection,
+        deleteCustomSection,
+    };
+}
+
+// ============================================
+// CUSTOM PAGES HOOK
+// ============================================
+const RESERVED_SLUGS = [
+    "about", "about-us", "portfolio", "testimonials", "contact",
+    "estimate", "book-consultation", "dashboard", "login", "signup",
+    "forgot-password", "store", "services", "admin",
+];
+
+export function useCustomPages(tenantId: string | null) {
+    const [customPages, setCustomPages] = useState<CustomPage[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (!tenantId) {
+            setLoading(false);
+            return;
+        }
+
+        const pagesRef = collection(db, "tenants", tenantId, "pages", "custom", "items");
+        const q = query(pagesRef, orderBy("order", "asc"));
+
+        const unsubscribe = onSnapshot(
+            q,
+            (snapshot) => {
+                const data = snapshot.docs.map((d) => ({
+                    id: d.id,
+                    ...d.data(),
+                })) as CustomPage[];
+                setCustomPages(data);
+                setLoading(false);
+            },
+            (error) => {
+                console.error("Error fetching custom pages:", error);
+                setLoading(false);
+            }
+        );
+
+        return () => unsubscribe();
+    }, [tenantId]);
+
+    const generateSlug = (title: string): string => {
+        return title
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, "")
+            .replace(/\s+/g, "-")
+            .replace(/-+/g, "-")
+            .trim();
+    };
+
+    const isSlugAvailable = (slug: string, excludeId?: string): boolean => {
+        if (RESERVED_SLUGS.includes(slug)) return false;
+        return !customPages.some((p) => p.slug === slug && p.id !== excludeId);
+    };
+
+    const addCustomPage = async (
+        page: Omit<CustomPage, "id" | "order" | "createdAt">
+    ): Promise<boolean> => {
+        if (!tenantId) return false;
+
+        if (!isSlugAvailable(page.slug)) return false;
+
+        setSaving(true);
+        try {
+            const pagesRef = collection(db, "tenants", tenantId, "pages", "custom", "items");
+            await addDoc(pagesRef, {
+                ...page,
+                order: customPages.length,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            });
+            return true;
+        } catch (error) {
+            console.error("Error adding custom page:", error);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const updateCustomPage = async (
+        pageId: string,
+        updates: Partial<CustomPage>
+    ): Promise<boolean> => {
+        if (!tenantId) return false;
+
+        if (updates.slug && !isSlugAvailable(updates.slug, pageId)) return false;
+
+        setSaving(true);
+        try {
+            const pageRef = doc(db, "tenants", tenantId, "pages", "custom", "items", pageId);
+            await updateDoc(pageRef, {
+                ...updates,
+                updatedAt: serverTimestamp(),
+            });
+            return true;
+        } catch (error) {
+            console.error("Error updating custom page:", error);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const deleteCustomPage = async (pageId: string): Promise<boolean> => {
+        if (!tenantId) return false;
+
+        setSaving(true);
+        try {
+            const pageRef = doc(db, "tenants", tenantId, "pages", "custom", "items", pageId);
+            await deleteDoc(pageRef);
+            return true;
+        } catch (error) {
+            console.error("Error deleting custom page:", error);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const uploadCustomPageImage = async (file: File): Promise<string | null> => {
+        if (!tenantId) return null;
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("tenantId", tenantId);
+            formData.append("folder", "pages/custom");
+
+            const response = await fetch("/api/upload", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error("Upload failed");
+            }
+
+            const data = await response.json();
+            return data.url;
+        } catch (error) {
+            console.error("Error uploading custom page image:", error);
+            return null;
+        }
+    };
+
+    return {
+        customPages,
+        loading,
+        saving,
+        generateSlug,
+        isSlugAvailable,
+        addCustomPage,
+        updateCustomPage,
+        deleteCustomPage,
+        uploadCustomPageImage,
     };
 }
 

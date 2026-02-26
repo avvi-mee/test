@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useAboutUs, useBrand, useTeamMembers } from "@/hooks/useWebsiteBuilder";
 import { Users, Target, Lightbulb, Trophy, Briefcase } from "lucide-react";
@@ -12,7 +12,7 @@ export default function AboutUsPage() {
     const tenantId = params.tenantId as string;
     const { aboutContent, loading } = useAboutUs(tenantId);
     const { brand } = useBrand(tenantId);
-    const { teamMembers, loading: teamLoading } = useTeamMembers(tenantId);
+    const { teamMembers } = useTeamMembers(tenantId);
 
     // Smooth scroll handling
     useEffect(() => {

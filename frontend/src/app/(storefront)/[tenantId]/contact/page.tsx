@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { Loader2, MapPin, Clock, Phone, Mail, MessageCircle, Instagram, Facebook } from "lucide-react";
+import { Loader2, MapPin, Phone, Mail, MessageCircle, Instagram } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { getTenantByStoreId } from "@/lib/firestoreHelpers";
@@ -108,7 +108,7 @@ export default function ContactPage({ params }: { params: Promise<{ tenantId: st
                         <div className="space-y-12 py-6">
                             <div className="space-y-4">
                                 <h2 className="text-4xl font-bold" style={{ color: secondaryColor }}>
-                                    Let's Discuss Your Space
+                                    Let&apos;s Discuss Your Space
                                 </h2>
                                 <p className="text-gray-500 text-lg leading-relaxed">
                                     Our design studio is open for consultations. Visit us or reach out through any of the channels below.

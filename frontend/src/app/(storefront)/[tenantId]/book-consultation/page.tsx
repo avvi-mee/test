@@ -65,7 +65,7 @@ export default function BookConsultationPage({ params }: { params: Promise<{ ten
                 <div className="space-y-2">
                     <h2 className="text-3xl font-bold text-gray-900">Store Not Found</h2>
                     <p className="text-gray-500 max-w-md mx-auto">
-                        We couldn't find the company profile you're looking for. Please check the URL and try again.
+                        We couldn&apos;t find the company profile you&apos;re looking for. Please check the URL and try again.
                     </p>
                 </div>
                 <Button onClick={() => router.push("/")} variant="outline" className="rounded-xl px-8 h-12">
@@ -110,7 +110,7 @@ export default function BookConsultationPage({ params }: { params: Promise<{ ten
                 <div className="md:col-span-2 bg-[#0F172A] p-10 text-white flex flex-col justify-between relative overflow-hidden">
                     <div className="relative z-10 space-y-8">
                         <div className="space-y-4">
-                            <h1 className="text-4xl font-bold leading-tight">Let's Create Your Dream Space</h1>
+                            <h1 className="text-4xl font-bold leading-tight">Let&apos;s Create Your Dream Space</h1>
                             <p className="text-gray-400 text-lg leading-relaxed">
                                 Book a complimentary design consultation with our experts and start your transformation journey.
                             </p>

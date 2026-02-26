@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { ArrowLeft, Package, Clock, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Package, Clock, CheckCircle, XCircle, Download, Calendar, Loader2 } from "lucide-react";
 import { usePublicWebsiteConfig } from "@/hooks/useWebsiteConfig";
 import { useStorefrontOrders } from "@/hooks/useStorefrontOrders";
 import { useRouter } from "next/navigation";
+import { generateEstimatePDF } from "@/lib/generateEstimatePdf";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
@@ -20,6 +21,7 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
     const [user, setUser] = useState<{ email: string; name: string } | null>(null);
     const [trackingOrder, setTrackingOrder] = useState<any>(null);
     const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+    const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
     useEffect(() => {
         // Retrieve session
@@ -88,6 +90,22 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
     const handleTrackOrder = (order: any) => {
         setTrackingOrder(order);
         setIsTrackingOpen(true);
+    };
+
+    const handleDownloadEstimate = async (order: any) => {
+        setDownloadingId(order.id);
+        try {
+            await generateEstimatePDF(order.id, config?.brandName || "Company", {
+                download: true,
+                uploadToStorage: false,
+                tenantId: order.tenantId
+            });
+        } catch (error) {
+            console.error("Error downloading estimate:", error);
+            alert("Failed to download estimate PDF");
+        } finally {
+            setDownloadingId(null);
+        }
     };
 
     return (
@@ -164,14 +182,40 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
                                                     <p className="font-bold text-gray-900">
                                                         {formatAmount(order.totalAmount || order.estimatedAmount)}
                                                     </p>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => handleTrackOrder(order)}
-                                                        className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-                                                    >
-                                                        Track Order
-                                                    </Button>
+                                                    <div className="flex flex-wrap gap-2 justify-end">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => handleDownloadEstimate(order)}
+                                                            disabled={downloadingId === order.id}
+                                                            className="text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                                                        >
+                                                            {downloadingId === order.id ? (
+                                                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                                            ) : (
+                                                                <Download className="mr-1 h-3 w-3" />
+                                                            )}
+                                                            Download Estimate
+                                                        </Button>
+                                                        <Link href={`/${tenantId}/book-consultation`}>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                                                            >
+                                                                <Calendar className="mr-1 h-3 w-3" />
+                                                                Book Consultation
+                                                            </Button>
+                                                        </Link>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => handleTrackOrder(order)}
+                                                            className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                                                        >
+                                                            Track Order
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -180,7 +224,7 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
                                             <div className="text-center py-12">
                                                 <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                                                 <h3 className="text-lg font-medium text-gray-900">No orders found</h3>
-                                                <p className="text-gray-500 mt-2">You haven't placed any orders yet.</p>
+                                                <p className="text-gray-500 mt-2">You haven&apos;t placed any orders yet.</p>
                                                 <Link href={`/${tenantId}/estimate`}>
                                                     <Button className="mt-4" style={{ backgroundColor: config?.primaryColor }}>
                                                         Create New Estimate

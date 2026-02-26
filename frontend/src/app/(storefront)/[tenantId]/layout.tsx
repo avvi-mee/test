@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Menu, Phone, X, User, LogOut, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect, use } from "react";
-import { usePublicWebsiteConfig } from "@/hooks/useWebsiteConfig";
+import { useState, useEffect, use, Suspense } from "react";
+import { usePublicWebsiteConfig, usePublicCustomPages } from "@/hooks/useWebsiteConfig";
 import { StorefrontAuthDialog } from "@/components/storefront/StorefrontAuthDialog";
 
 import { useSearchParams, useRouter } from "next/navigation";
@@ -16,10 +16,30 @@ export default function StorefrontLayout({
     children: React.ReactNode;
     params: Promise<{ tenantId: string }>;
 }) {
+    return (
+        <Suspense fallback={
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+                <div className="h-10 w-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="mt-4 text-gray-500 font-medium">Loading...</p>
+            </div>
+        }>
+            <StorefrontLayoutInner params={params}>{children}</StorefrontLayoutInner>
+        </Suspense>
+    );
+}
+
+function StorefrontLayoutInner({
+    children,
+    params,
+}: {
+    children: React.ReactNode;
+    params: Promise<{ tenantId: string }>;
+}) {
     const { tenantId } = use(params);
     const searchParams = useSearchParams();
 
-    const { config, loading } = usePublicWebsiteConfig(tenantId);
+    const { config, tenantId: resolvedTenantId, loading } = usePublicWebsiteConfig(tenantId);
+    const { customPages } = usePublicCustomPages(resolvedTenantId);
 
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
@@ -34,7 +54,7 @@ export default function StorefrontLayout({
             if (stored) {
                 try {
                     setUser(JSON.parse(stored));
-                } catch (e) { setUser(null); }
+                } catch { setUser(null); }
             } else {
                 setUser(null);
             }
@@ -119,12 +139,26 @@ export default function StorefrontLayout({
         return <>{children}</>;
     }
 
-    const brandName = config?.headerTitle || config?.brandName || tenantId;
+    const brandName = (config?.headerTitle?.trim() || config?.brandName?.trim()) || tenantId;
     const phone = config?.phone;
     const email = config?.email;
     const primaryColor = config?.primaryColor || "#ea580c";
     const secondaryColor = config?.secondaryColor || "#1c1917";
     const footerText = config?.footerText || "Transforming spaces into dreams.";
+
+    // Build dynamic navigation links
+    const coreLinks = [
+        { name: "Home", href: `/${tenantId}#hero` },
+        { name: "Services", href: `/${tenantId}#services` },
+        { name: "Portfolio", href: `/${tenantId}#portfolio` },
+        { name: "About", href: `/${tenantId}#about` },
+        { name: "Contact", href: `/${tenantId}#contact` },
+    ];
+    const customPageLinks = customPages.map((page) => ({
+        name: page.title,
+        href: `/${tenantId}/${page.slug}`,
+    }));
+    const navLinks = [...coreLinks, ...customPageLinks, { name: "Get Estimate", href: `/${tenantId}/estimate` }];
 
     // Show loading state only for initial load (first 2 seconds max)
     if (loading && !config) {
@@ -168,15 +202,7 @@ export default function StorefrontLayout({
 
                     {/* Desktop Navigation */}
                     <nav className="hidden md:flex items-center gap-8">
-                        {[
-                            { name: "Home", href: `/${tenantId}#hero` },
-                            { name: "Services", href: `/${tenantId}#services` },
-                            { name: "Portfolio", href: `/${tenantId}#portfolio` },
-
-                            { name: "About", href: `/${tenantId}#about` },
-                            { name: "Contact", href: `/${tenantId}#contact` },
-                            { name: "Get Estimate", href: `/${tenantId}/estimate` },
-                        ].map((link) => (
+                        {navLinks.map((link) => (
                             <Link
                                 key={link.name}
                                 href={link.href}
@@ -245,15 +271,7 @@ export default function StorefrontLayout({
                         }`}
                 >
                     <nav className="flex flex-col p-6 gap-4">
-                        {[
-                            { name: "Home", href: `/${tenantId}#hero` },
-                            { name: "Services", href: `/${tenantId}#services` },
-                            { name: "Portfolio", href: `/${tenantId}#portfolio` },
-
-                            { name: "About", href: `/${tenantId}#about` },
-                            { name: "Contact", href: `/${tenantId}#contact` },
-                            { name: "Get Estimate", href: `/${tenantId}/estimate` },
-                        ].map((link) => (
+                        {navLinks.map((link) => (
                             <Link
                                 key={link.name}
                                 href={link.href}
@@ -353,6 +371,7 @@ export default function StorefrontLayout({
                                 { name: "Portfolio", href: `/${tenantId}/portfolio` },
                                 { name: "Testimonials", href: `/${tenantId}/testimonials` },
                                 { name: "About", href: `/${tenantId}/about` },
+                                ...customPageLinks,
                             ].map((link) => (
                                 <li key={link.name}>
                                     <Link href={link.href} className="hover:text-indigo-400 transition-colors">{link.name}</Link>

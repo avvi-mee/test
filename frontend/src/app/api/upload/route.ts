@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { storage } from "@/lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { writeFile, mkdir } from "fs/promises";
+import path from "path";
 
 export async function POST(req: NextRequest) {
     try {
@@ -26,20 +26,20 @@ export async function POST(req: NextRequest) {
         const extension = file.name.split('.').pop();
         const filename = `${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
 
-        // Define storage path: tenants/[tenantId]/[folder]/[filename]
-        const storagePath = `tenants/${tenantId}/${folder}/${filename}`;
-        const storageRef = ref(storage, storagePath);
+        // Define local storage path: public/uploads/[tenantId]/[folder]/[filename]
+        const uploadDir = path.join(process.cwd(), "public", "uploads", tenantId, folder);
 
-        // Convert File to ArrayBuffer for Firebase
+        // Ensure directory exists
+        await mkdir(uploadDir, { recursive: true });
+
+        // Convert File to Buffer and write to disk
         const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const filePath = path.join(uploadDir, filename);
+        await writeFile(filePath, buffer);
 
-        // Upload to Firebase Storage
-        const snapshot = await uploadBytes(storageRef, arrayBuffer, {
-            contentType: file.type,
-        });
-
-        // Get the permanent download URL
-        const url = await getDownloadURL(snapshot.ref);
+        // Return the public URL
+        const url = `/uploads/${tenantId}/${folder}/${filename}`;
 
         return NextResponse.json({ url });
     } catch (error) {

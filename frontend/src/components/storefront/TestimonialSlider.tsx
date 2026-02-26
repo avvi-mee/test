@@ -57,22 +57,21 @@ export default function TestimonialSlider({ testimonials, accentColor = "#f59e0b
                                         </span>
                                     </div>
                                 )}
-                                <div>
+                                <div className="text-center">
                                     <h4 className="font-bold text-lg text-gray-900">{testimonial.clientName}</h4>
                                     <p className="text-sm text-gray-500 font-medium">{testimonial.clientTitle}</p>
+                                    <div className="flex justify-center gap-1 mt-2">
+                                        {Array.from({ length: 5 }).map((_, i) => (
+                                            <svg
+                                                key={i}
+                                                className={`w-5 h-5 ${i < testimonial.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-300"}`}
+                                                viewBox="0 0 20 20"
+                                            >
+                                                <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                                            </svg>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="flex gap-1 mt-1">
-                                {Array.from({ length: 5 }).map((_, i) => (
-                                    <svg
-                                        key={i}
-                                        className={`w-5 h-5 ${i < testimonial.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-300"
-                                            }`}
-                                        viewBox="0 0 20 20"
-                                    >
-                                        <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                                    </svg>
-                                ))}
                             </div>
                         </div>
                     </div>

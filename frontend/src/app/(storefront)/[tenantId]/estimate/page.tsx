@@ -7,16 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Loader2, CheckCircle2, Plus, Minus, Download, Home, Building2, ChevronRight, ArrowLeft, Menu, ArrowRight as ArrowForward, User, LayoutGrid, Calculator, ChevronDown } from "lucide-react";
+import { Loader2, CheckCircle2, Plus, Minus, Home, Building2, ChevronRight, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { usePricingConfig, PricingItem } from "@/hooks/usePricingConfig";
-import { useCities } from "@/hooks/useCities";
-import { useCustomerAuth } from "@/hooks/useCustomerAuth";
+import { usePricingConfig } from "@/hooks/usePricingConfig";
 import { usePublicWebsiteConfig } from "@/hooks/useWebsiteConfig";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { getTenantByStoreId, Tenant } from "@/lib/firestoreHelpers";
-import { generateEstimatePDF } from "@/lib/generateEstimatePdf";
+import { calculateEstimate } from "@/lib/calculateEstimate";
+import { saveEstimateDraft } from "@/lib/estimateTypes";
 
 type Plan = 'Basic' | 'Standard' | 'Luxe';
 
@@ -64,13 +61,10 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
 
     const { config: websiteConfig, loading: websiteLoading } = usePublicWebsiteConfig(tenantSlug);
     const { config, loading: pricingLoading } = usePricingConfig(resolvedTenant?.id || null);
-    const { cities, loading: citiesLoading } = useCities(resolvedTenant?.id || null);
-    const { customer, loading: authLoading, isAdmin } = useCustomerAuth();
 
-    const loading = tenantLoading || pricingLoading || citiesLoading || websiteLoading;
+    const loading = tenantLoading || pricingLoading || websiteLoading;
 
     const primaryColor = websiteConfig?.primaryColor || "#0F172A";
-    const secondaryColor = websiteConfig?.secondaryColor || "#1E293B";
     const buttonRadius = websiteConfig?.buttonRadius || 12;
     const backgroundColor = websiteConfig?.backgroundColor || "#ffffff";
 
@@ -78,14 +72,6 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
     // Auth check moved to handleSubmit function
 
     const [step, setStep] = useState(1);
-    const [currentEstimateId, setCurrentEstimateId] = useState<string | null>(null);
-    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-
-    // Customer Info
-    const [customerName, setCustomerName] = useState("");
-    const [customerPhone, setCustomerPhone] = useState("");
-    const [customerEmail, setCustomerEmail] = useState("");
-    const [selectedCity, setSelectedCity] = useState("");
 
     // Project Details
     const [segment, setSegment] = useState<'Residential' | 'Commercial'>('Residential');
@@ -106,36 +92,41 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
     const [cabinCount, setCabinCount] = useState(0);
     const [cabins, setCabins] = useState<BedroomConfig[]>([]);
 
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [estimatedTotal, setEstimatedTotal] = useState(0);
-    const [breakdown, setBreakdown] = useState<any[]>([]);
-
     // Update bedroom/bathroom arrays when counts change
     useEffect(() => {
         const count = Math.max(0, bedroomCount);
-        if (count > bedrooms.length) {
-            setBedrooms(prev => [...prev, ...Array(count - prev.length).fill({ items: {} })]);
-        } else if (count < bedrooms.length) {
-            setBedrooms(prev => prev.slice(0, count));
-        }
+        setBedrooms(prev => {
+            if (count > prev.length) {
+                return [...prev, ...Array(count - prev.length).fill({ items: {} })];
+            } else if (count < prev.length) {
+                return prev.slice(0, count);
+            }
+            return prev;
+        });
     }, [bedroomCount]);
 
     useEffect(() => {
         const count = Math.max(0, bathroomCount);
-        if (count > bathrooms.length) {
-            setBathrooms(prev => [...prev, ...Array(count - prev.length).fill({ items: {} })]);
-        } else if (count < bathrooms.length) {
-            setBathrooms(prev => prev.slice(0, count));
-        }
+        setBathrooms(prev => {
+            if (count > prev.length) {
+                return [...prev, ...Array(count - prev.length).fill({ items: {} })];
+            } else if (count < prev.length) {
+                return prev.slice(0, count);
+            }
+            return prev;
+        });
     }, [bathroomCount]);
 
     useEffect(() => {
         const count = Math.max(0, cabinCount);
-        if (count > cabins.length) {
-            setCabins(prev => [...prev, ...Array(count - prev.length).fill({ items: {} })]);
-        } else if (count < cabins.length) {
-            setCabins(prev => prev.slice(0, count));
-        }
+        setCabins(prev => {
+            if (count > prev.length) {
+                return [...prev, ...Array(count - prev.length).fill({ items: {} })];
+            } else if (count < prev.length) {
+                return prev.slice(0, count);
+            }
+            return prev;
+        });
     }, [cabinCount]);
 
     // Set default kitchen layout and material when config loads
@@ -155,67 +146,11 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [step]);
 
-    // Auto-submit after login if there's pending estimate data
-    useEffect(() => {
-        const checkPendingEstimate = async () => {
-            // Check URL params for autoSubmit flag
-            const urlParams = new URLSearchParams(window.location.search);
-            const shouldAutoSubmit = urlParams.get('autoSubmit') === 'true';
-
-            if (shouldAutoSubmit && (customer || isAdmin)) {
-                // User just logged in, check for pending estimate
-                const pendingData = sessionStorage.getItem('pendingEstimate');
-
-                if (pendingData) {
-                    try {
-                        const formData = JSON.parse(pendingData);
-
-                        // Restore form state
-                        setCustomerName(formData.customerInfo.name);
-                        setCustomerPhone(formData.customerInfo.phone);
-                        setCustomerEmail(formData.customerInfo.email);
-                        setSelectedCity(formData.customerInfo.city);
-                        setSegment(formData.segment);
-                        setSelectedPlan(formData.plan);
-                        setCarpetArea(formData.carpetArea.toString());
-                        setBedroomCount(formData.bedrooms);
-                        setBathroomCount(formData.bathrooms);
-                        setLivingAreaItems(formData.configuration.livingArea);
-                        setKitchenLayout(formData.configuration.kitchen.layout);
-                        setKitchenMaterial(formData.configuration.kitchen.material);
-                        setKitchenItems(formData.configuration.kitchen.items);
-                        setBedrooms(formData.configuration.bedrooms);
-                        setBathrooms(formData.configuration.bathrooms);
-                        if (formData.configuration.cabins) {
-                            setCabins(formData.configuration.cabins);
-                            setCabinCount(formData.configuration.cabins.length);
-                        }
-
-                        // Wait a moment for state to update, then submit
-                        setTimeout(() => {
-                            handleSubmit();
-                            // Clean up URL
-                            window.history.replaceState({}, '', `/${tenantSlug}/estimate`);
-                        }, 500);
-                    } catch (error) {
-                        console.error('Error restoring pending estimate:', error);
-                        sessionStorage.removeItem('pendingEstimate');
-                    }
-                }
-            }
-        };
-
-        if (!authLoading) {
-            checkPendingEstimate();
-        }
-    }, [customer, isAdmin, authLoading]);
-
     const isStepValid = () => {
         if (step === 1) return true;
         if (step === 2) return true;
         if (step === 3) return carpetArea && parseFloat(carpetArea) > 0;
         if (step === 4) return true;
-        if (step === 5) return customerName && customerPhone.length >= 10 && customerEmail.includes('@') && selectedCity;
         return false;
     };
 
@@ -274,273 +209,26 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
         }
     };
 
-    const calculateEstimate = () => {
-        if (!config?.categories) return { total: 0, breakdown: [] };
-
-        const area = parseFloat(carpetArea) || 0;
-        let total = 0;
-        const breakdown: any[] = [];
-
-        const priceKey = selectedPlan === 'Basic' ? 'basicPrice' : selectedPlan === 'Standard' ? 'standardPrice' : 'luxePrice';
-
-        // Helper to calculate item cost
-        const calculateItemCost = (item: PricingItem, quantity: number) => {
-            if (item.type === 'fixed') {
-                return item[priceKey];
-            } else if (item.type === 'perUnit') {
-                return quantity * item[priceKey];
-            } else if (item.type === 'perSqft') {
-                return area * quantity * item[priceKey];
-            }
-            return 0;
-        };
-
-        // 1. Process All Categories for "General" items (stored in livingAreaItems for custom cats)
-        config.categories.forEach(category => {
-            const isKitchen = category.id === 'kitchen' || category.name.toLowerCase() === 'kitchen';
-            const isBedroom = category.id === 'bedroom' || category.name.toLowerCase() === 'bedroom';
-            const isBathroom = category.id === 'bathroom' || category.name.toLowerCase() === 'bathroom';
-
-            if (!isKitchen && !isBedroom && !isBathroom) {
-                // Living Area + All Other Custom Categories
-                Object.entries(livingAreaItems).forEach(([itemId, quantity]) => {
-                    if (quantity > 0) {
-                        const item = category.items.find(i => i.id === itemId);
-                        if (item && item.enabled) {
-                            const cost = calculateItemCost(item, quantity);
-                            total += cost;
-                            breakdown.push({
-                                category: category.name,
-                                item: item.name,
-                                quantity,
-                                unitPrice: item[priceKey],
-                                total: cost
-                            });
-                        }
-                    }
-                });
-            } else if (isKitchen) {
-                // Kitchen items
-                Object.entries(kitchenItems).forEach(([itemId, quantity]) => {
-                    if (quantity > 0) {
-                        const item = category.items.find(i => i.id === itemId);
-                        if (item && item.enabled) {
-                            const cost = calculateItemCost(item, quantity);
-                            total += cost;
-                            breakdown.push({
-                                category: category.name,
-                                item: item.name,
-                                quantity,
-                                unitPrice: item[priceKey],
-                                total: cost
-                            });
-                        }
-                    }
-                });
-            } else if (isBedroom) {
-                // Bedroom items (mapped per room)
-                bedrooms.forEach((bedroom, index) => {
-                    Object.entries(bedroom.items).forEach(([itemId, quantity]) => {
-                        if (quantity > 0) {
-                            const item = category.items.find(i => i.id === itemId);
-                            if (item && item.enabled) {
-                                const cost = calculateItemCost(item, quantity);
-                                total += cost;
-                                breakdown.push({
-                                    category: `Bedroom ${index + 1}`,
-                                    item: item.name,
-                                    quantity,
-                                    unitPrice: item[priceKey],
-                                    total: cost
-                                });
-                            }
-                        }
-                    });
-                });
-            } else if (isBathroom) {
-                // Bathroom items (mapped per room)
-                bathrooms.forEach((bathroom, index) => {
-                    Object.entries(bathroom.items).forEach(([itemId, quantity]) => {
-                        if (quantity > 0) {
-                            const item = category.items.find(i => i.id === itemId);
-                            if (item && item.enabled) {
-                                const cost = calculateItemCost(item, quantity);
-                                total += cost;
-                                breakdown.push({
-                                    category: `Bathroom ${index + 1}`,
-                                    item: item.name,
-                                    quantity,
-                                    unitPrice: item[priceKey],
-                                    total: cost
-                                });
-                            }
-                        }
-                    });
-                });
-            } else if (category.id === 'cabin' || category.name.toLowerCase() === 'cabin') {
-                // Cabin items (mapped per room)
-                cabins.forEach((cabin, index) => {
-                    Object.entries(cabin.items).forEach(([itemId, quantity]) => {
-                        if (quantity > 0) {
-                            const item = category.items.find(i => i.id === itemId);
-                            if (item && item.enabled) {
-                                const cost = calculateItemCost(item, quantity);
-                                total += cost;
-                                breakdown.push({
-                                    category: `Cabin ${index + 1}`,
-                                    item: item.name,
-                                    quantity,
-                                    unitPrice: item[priceKey],
-                                    total: cost
-                                });
-                            }
-                        }
-                    });
-                });
-            }
+    const handleSaveDraftAndRedirect = () => {
+        saveEstimateDraft(tenantSlug, {
+            segment,
+            plan: selectedPlan,
+            carpetArea: parseFloat(carpetArea) || 0,
+            bedroomCount,
+            bathroomCount,
+            cabinCount,
+            livingAreaItems,
+            kitchenLayout,
+            kitchenMaterial,
+            kitchenItems,
+            bedrooms,
+            bathrooms,
+            cabins,
+            tenantId: resolvedTenant?.id || "",
+            tenantSlug,
+            savedAt: Date.now()
         });
-
-        return { total, breakdown };
-    };
-
-    // Check local storage for simulated user
-    const [simulatedUser, setSimulatedUser] = useState<{ email: string; name: string } | null>(null);
-    useEffect(() => {
-        if (tenantSlug) {
-            const stored = localStorage.getItem(`storefront_user_${tenantSlug}`);
-            if (stored) {
-                try {
-                    setSimulatedUser(JSON.parse(stored));
-                } catch (e) {
-                    console.error("Failed to parse stored user", e);
-                }
-            }
-        }
-    }, [tenantSlug]);
-
-    const handleSubmit = async () => {
-        // Validation
-        if (!customerName || !customerPhone || !customerEmail || !selectedCity) {
-            alert("Please fill in all customer information fields");
-            return;
-        }
-        if (!carpetArea || parseFloat(carpetArea) <= 0) {
-            alert("Please enter a valid carpet area");
-            return;
-        }
-
-        // Check if user is authenticated (Firebase Auth OR Simulated LocalAuth)
-        if (!customer && !isAdmin && !simulatedUser) {
-            // User is not logged in - save form data to sessionStorage
-            const formData = {
-                customerInfo: {
-                    name: customerName,
-                    phone: customerPhone,
-                    email: customerEmail,
-                    city: selectedCity
-                },
-                segment,
-                plan: selectedPlan,
-                carpetArea: parseFloat(carpetArea),
-                bedrooms: bedroomCount,
-                bathrooms: bathroomCount,
-                configuration: {
-                    livingArea: livingAreaItems,
-                    kitchen: {
-                        layout: kitchenLayout,
-                        material: kitchenMaterial,
-                        items: kitchenItems
-                    },
-                    bedrooms: bedrooms,
-                    bathrooms: bathrooms,
-                    cabins: cabins
-                },
-                tenantId: resolvedTenant?.id,
-                tenantSlug: tenantSlug
-            };
-
-            // Save to sessionStorage
-            sessionStorage.setItem('pendingEstimate', JSON.stringify(formData));
-
-            // Redirect to dashboard (which handles auth if not logged in) or open auth dialog
-            // Since we can't easily open the dialog from here without context, and we don't have a dedicated login page,
-            // we will redirect to the dashboard which will prompt for login or show the user dashboard.
-            // A better UX would be to emit an event to open the dialog, but for now:
-            const currentUrl = window.location.pathname;
-            // We can encode the return URL to handle post-login redirection if we improve the auth flow later
-            router.push(`/${tenantSlug}?openAuth=true&returnUrl=${encodeURIComponent(currentUrl)}`);
-            return;
-        }
-
-        // Auto-fill customer info from simulated user if not provided (though form validation ensures it is)
-        // We can also ensure the email matches the logged in user if we wanted to be strict.
-
-        // User is logged in - proceed with submission
-        setIsSubmitting(true);
-
-
-        try {
-            const { total, breakdown } = calculateEstimate();
-
-            // Save to Firestore
-            const estimateData = {
-                customerInfo: {
-                    name: customerName,
-                    phone: customerPhone,
-                    email: customerEmail,
-                    city: selectedCity
-                },
-                segment,
-                plan: selectedPlan,
-                carpetArea: parseFloat(carpetArea),
-                bedrooms: bedroomCount,
-                bathrooms: bathroomCount,
-                configuration: {
-                    livingArea: livingAreaItems,
-                    kitchen: {
-                        layout: kitchenLayout,
-                        material: kitchenMaterial,
-                        items: kitchenItems
-                    },
-                    bedrooms: bedrooms,
-                    bathrooms: bathrooms,
-                    cabins: cabins
-                },
-                totalAmount: total,
-                tenantId: resolvedTenant?.id,
-                customerId: customer?.uid || null,
-                createdAt: serverTimestamp()
-            };
-
-            const estimatesRef = collection(db, `tenants/${resolvedTenant?.id}/estimates`);
-            const docRef = await addDoc(estimatesRef, estimateData);
-
-            setCurrentEstimateId(docRef.id);
-            setEstimatedTotal(total);
-            setBreakdown(breakdown);
-            setStep(6);
-
-            // Clear sessionStorage if it exists
-            sessionStorage.removeItem('pendingEstimate');
-        } catch (error) {
-            console.error("Error submitting estimate:", error);
-            alert("Failed to submit estimate. Please try again.");
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    const handleDownloadPDF = async () => {
-        if (!currentEstimateId) return;
-        setIsGeneratingPDF(true);
-        try {
-            await generateEstimatePDF(currentEstimateId, resolvedTenant?.businessName || "Company", { download: true, uploadToStorage: true, tenantId: resolvedTenant?.id });
-        } catch (error) {
-            console.error("Error generating PDF:", error);
-            alert("Failed to generate PDF");
-        } finally {
-            setIsGeneratingPDF(false);
-        }
+        router.push(`/${tenantSlug}/estimate/login`);
     };
 
     if (loading) {
@@ -558,7 +246,7 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
                     <CardHeader>
                         <CardTitle className="text-2xl font-bold">Store Not Found</CardTitle>
                         <CardDescription>
-                            The estimate page you're trying to reach doesn't exist or the company ID is incorrect.
+                            The estimate page you&apos;re trying to reach doesn&apos;t exist or the company ID is incorrect.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -567,96 +255,6 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
                         </Button>
                     </CardContent>
                 </Card>
-            </div>
-        );
-    }
-
-    if (step === 6) {
-        return (
-            <div className="min-h-screen py-12 px-4 flex items-center justify-center transition-colors duration-500" style={{ backgroundColor: `${primaryColor}10` }}>
-                <div className="max-w-3xl w-full">
-                    <Card className="border-none shadow-2xl overflow-hidden rounded-3xl" style={{ borderRadius: buttonRadius }}>
-                        <CardHeader className="text-center pb-8 pt-12 bg-white">
-                            <div className="mx-auto mb-6 h-24 w-24 rounded-full bg-green-100 flex items-center justify-center ring-8 ring-green-50">
-                                <CheckCircle2 className="h-12 w-12 text-green-600" />
-                            </div>
-                            <CardTitle className="text-4xl font-bold text-[#0F172A] mb-2 tracking-tight">
-                                Estimate Ready!
-                            </CardTitle>
-                            <CardDescription className="text-lg text-gray-500">
-                                Your detailed project estimate has been generated
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-8 pb-12 bg-gray-50/50 p-8">
-                            <div className="rounded-2xl p-8 text-center text-white shadow-lg transform hover:scale-[1.02] transition-all duration-300" style={{ background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`, borderRadius: buttonRadius }}>
-                                <p className="text-sm font-medium mb-2 opacity-90 uppercase tracking-widest">Total Project Cost</p>
-                                <p className="text-6xl font-bold tracking-tight">₹ {estimatedTotal.toLocaleString('en-IN')}</p>
-                                <p className="text-sm mt-3 opacity-80 font-medium bg-white/20 inline-block px-3 py-1 rounded-full">{selectedPlan} Plan</p>
-                            </div>
-
-                            {breakdown.length > 0 && (
-                                <div className="space-y-4">
-                                    <h3 className="font-bold text-xl text-[#0F172A] px-1">Detailed Breakdown</h3>
-                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full">
-                                                <thead className="bg-gray-50 border-b border-gray-100">
-                                                    <tr>
-                                                        <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Category</th>
-                                                        <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Item</th>
-                                                        <th className="text-right p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Qty</th>
-                                                        <th className="text-right p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Unit Price</th>
-                                                        <th className="text-right p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Total</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-50">
-                                                    {breakdown.map((item, index) => (
-                                                        <tr key={index} className="hover:bg-gray-50/50 transition-colors">
-                                                            <td className="p-4 text-sm font-medium text-gray-900">{item.category}</td>
-                                                            <td className="p-4 text-sm text-gray-600">{item.item}</td>
-                                                            <td className="p-4 text-sm text-right text-gray-600">{item.quantity}</td>
-                                                            <td className="p-4 text-sm text-right text-gray-600">₹ {item.unitPrice.toLocaleString('en-IN')}</td>
-                                                            <td className="p-4 text-sm text-right font-bold text-gray-900">₹ {item.total.toLocaleString('en-IN')}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                                <Button
-                                    onClick={handleDownloadPDF}
-                                    disabled={isGeneratingPDF}
-                                    className="flex-1 text-white py-7 text-lg shadow-lg hover:shadow-xl transition-all"
-                                    style={{ backgroundColor: primaryColor, borderRadius: buttonRadius }}
-                                >
-                                    {isGeneratingPDF ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                                            Generating PDF...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Download className="mr-2 h-5 w-5" />
-                                            Download Breakdown PDF
-                                        </>
-                                    )}
-                                </Button>
-                                <Button
-                                    onClick={() => router.push(`/${tenantSlug}`)}
-                                    variant="outline"
-                                    className="flex-1 py-7 text-lg border-2 hover:bg-gray-50 transition-all"
-                                    style={{ borderRadius: buttonRadius, borderColor: primaryColor, color: primaryColor }}
-                                >
-                                    Go Back Home
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
             </div>
         );
     }
@@ -686,20 +284,16 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
         !isRoom(c, 'bathroom')
     );
 
-    const enabledCities = cities.length > 0
-        ? cities.filter(c => c.enabled)
-        : [
-            { id: 'def-1', name: 'Mumbai', enabled: true },
-            { id: 'def-2', name: 'Delhi', enabled: true },
-            { id: 'def-3', name: 'Bangalore', enabled: true },
-            { id: 'def-4', name: 'Hyderabad', enabled: true },
-            { id: 'def-5', name: 'Ahmedabad', enabled: true },
-            { id: 'def-6', name: 'Chennai', enabled: true },
-            { id: 'def-7', name: 'Kolkata', enabled: true },
-            { id: 'def-8', name: 'Pune', enabled: true }
-        ];
-
-    const { total: currentTotal } = calculateEstimate();
+    const { total: currentTotal } = calculateEstimate(config, {
+        segment,
+        selectedPlan,
+        carpetArea: parseFloat(carpetArea) || 0,
+        livingAreaItems,
+        kitchenItems,
+        bedrooms,
+        bathrooms,
+        cabins
+    });
 
     return (
         <div className="min-h-screen text-[#0F172A] font-sans pt-4 pb-32 relative z-0 transition-colors duration-500" style={{ backgroundColor }}>
@@ -709,7 +303,7 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
                 {/* Progress Indicators */}
                 <div className="flex justify-center mb-12">
                     <div className="flex gap-2">
-                        {[1, 2, 3, 4, 5].map(s => (
+                        {[1, 2, 3, 4].map(s => (
                             <div
                                 key={s}
                                 className={cn(
@@ -1126,52 +720,6 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
                     </div>
                 )}
 
-                {/* Step 5: Review & Submit */}
-                {step === 5 && (
-                    <div className="space-y-12 animate-in slide-in-from-bottom-8 fade-in duration-700 ease-out">
-                        <div className="text-center space-y-3">
-                            <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Final Review</h1>
-                            <p className="text-xl text-gray-500 font-light">Confirm your details and receive estimate</p>
-                        </div>
-
-                        <div className="rounded-3xl p-10 text-white text-center shadow-2xl transform hover:scale-[1.01] transition-all duration-500 relative overflow-hidden"
-                            style={{ background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`, borderRadius: (buttonRadius as number) * 2 }}>
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-                            <div className="relative z-10">
-                                <p className="text-gray-400 font-bold mb-3 uppercase tracking-widest text-xs">Estimated Cost</p>
-                                <div className="text-6xl font-bold mb-3 tracking-tight">₹ {currentTotal.toLocaleString('en-IN')}</div>
-                                <p className="text-sm opacity-60 font-medium">Based on {selectedPlan} Plan</p>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6 max-w-2xl mx-auto bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                            <h3 className="font-bold text-lg border-b border-gray-100 pb-4 text-gray-900">Customer Details</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <Label className="text-xs font-bold uppercase text-gray-500">Full Name</Label>
-                                    <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="h-14 bg-gray-50 border-0 rounded-xl px-4 text-lg" placeholder="John Doe" />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs font-bold uppercase text-gray-500">Phone</Label>
-                                    <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="h-14 bg-gray-50 border-0 rounded-xl px-4 text-lg" placeholder="+91 98765 43210" />
-                                </div>
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label className="text-xs font-bold uppercase text-gray-500">Email</Label>
-                                    <Input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="h-14 bg-gray-50 border-0 rounded-xl px-4 text-lg" placeholder="john@example.com" />
-                                </div>
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label className="text-xs font-bold uppercase text-gray-500">City</Label>
-                                    <Select value={selectedCity} onValueChange={setSelectedCity}>
-                                        <SelectTrigger className="h-14 bg-gray-50 border-0 rounded-xl px-4 text-lg"><SelectValue placeholder="Select City" /></SelectTrigger>
-                                        <SelectContent>
-                                            {enabledCities.map(city => (<SelectItem key={city.id} value={city.name}>{city.name}</SelectItem>))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </main>
 
             {/* Sticky Footer */}
@@ -1186,7 +734,7 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
                         <ArrowLeft className="mr-2 h-5 w-5" /> Back
                     </Button>
 
-                    {step < 5 ? (
+                    {step < 4 ? (
                         <Button
                             className="text-white px-10 py-7 text-lg font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border-0"
                             onClick={() => setStep(s => s + 1)}
@@ -1198,11 +746,11 @@ export default function EstimatorPage({ params }: { params: Promise<{ tenantId: 
                     ) : (
                         <Button
                             className="text-white px-10 py-7 text-lg font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border-0"
-                            onClick={handleSubmit}
-                            disabled={isSubmitting || !isStepValid()}
+                            onClick={handleSaveDraftAndRedirect}
+                            disabled={!isStepValid()}
                             style={{ backgroundColor: primaryColor, borderRadius: (buttonRadius as number) * 2 }}
                         >
-                            {isSubmitting ? <><Loader2 className="mr-2 animate-spin" /> Submitting...</> : "Confirm & Submit"}
+                            Get Estimate <ChevronRight className="ml-2 h-5 w-5" />
                         </Button>
                     )}
                 </div>

@@ -7,7 +7,6 @@ import {
     ArrowRight,
     Loader2,
     CheckCircle,
-    Calendar,
     Mail,
     Phone,
     Layout,
@@ -20,7 +19,7 @@ import {
     Lightbulb
 } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, query, where, getDocs, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { doc, collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { getTenantByStoreId } from "@/lib/firestoreHelpers";
 import HeroSlider from "@/components/storefront/HeroSlider";
 import TestimonialSlider from "@/components/storefront/TestimonialSlider";
@@ -49,7 +48,7 @@ export default function StorefrontPage({ params }: StorefrontPageProps) {
 
     useEffect(() => {
         let isMounted = true;
-        let unsubs: (() => void)[] = [];
+        const unsubs: (() => void)[] = [];
 
         const setupListeners = async () => {
             if (!storeSlug) {
@@ -171,7 +170,7 @@ export default function StorefrontPage({ params }: StorefrontPageProps) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen pt-20 text-center px-4 bg-gray-50">
                 <h1 className="text-4xl font-bold mb-4 text-gray-900">Store Not Found</h1>
-                <p className="text-gray-600 max-w-md">We couldn't find the store "{storeSlug}". Please check the URL and try again.</p>
+                <p className="text-gray-600 max-w-md">We couldn&apos;t find the store &quot;{storeSlug}&quot;. Please check the URL and try again.</p>
                 <Link href="/">
                     <Button className="mt-6" variant="outline">Back to Home</Button>
                 </Link>
@@ -416,6 +415,41 @@ export default function StorefrontPage({ params }: StorefrontPageProps) {
 
                 </div>
             </section>
+
+            {/* Custom Content Sections */}
+            {homeContent?.customSections && homeContent.customSections.length > 0 &&
+                homeContent.customSections
+                    .sort((a, b) => a.order - b.order)
+                    .map((section) => (
+                        <section
+                            key={section.id}
+                            className="py-32 opacity-0 translate-y-8 transition-all duration-700"
+                            data-scroll-animate
+                        >
+                            <div className="container mx-auto px-4">
+                                <div className={`grid ${section.imageUrl ? "md:grid-cols-2" : "md:grid-cols-1"} gap-16 items-center max-w-7xl mx-auto`}>
+                                    <div className="space-y-6">
+                                        <h2 className="text-5xl font-bold leading-tight" style={{ color: secondaryColor }}>
+                                            {section.title}
+                                        </h2>
+                                        <p className="text-gray-600 text-lg leading-relaxed whitespace-pre-line">
+                                            {section.description}
+                                        </p>
+                                    </div>
+                                    {section.imageUrl && (
+                                        <div className="relative h-[500px] rounded-3xl overflow-hidden shadow-2xl transition-transform duration-500 hover:scale-[1.02]">
+                                            <img
+                                                src={section.imageUrl}
+                                                alt={section.title}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </section>
+                    ))
+            }
 
             {/* Contact Section */}
             <section

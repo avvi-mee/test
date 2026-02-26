@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Mail } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCustomerAuth } from "@/hooks/useCustomerAuth";
 import Link from "next/link";
-import { getTenantByStoreId } from "@/lib/firestoreHelpers";
 
 export default function CustomerLoginPage({ params }: { params: Promise<{ tenantId: string }> }) {
     const { tenantId } = use(params);
@@ -18,7 +17,7 @@ export default function CustomerLoginPage({ params }: { params: Promise<{ tenant
     const searchParams = useSearchParams();
     const redirectUrl = searchParams.get("redirect") || `/${tenantId}/estimate`;
 
-    const { loginWithEmail, loginWithGoogle } = useCustomerAuth();
+    const { loginWithEmail } = useCustomerAuth();
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -103,7 +102,7 @@ export default function CustomerLoginPage({ params }: { params: Promise<{ tenant
                 </CardContent>
                 <CardFooter className="flex justify-center">
                     <p className="text-sm text-muted-foreground">
-                        Don't have an account?{" "}
+                        Don&apos;t have an account?{" "}
                         <Link href={`/${tenantId}/signup?redirect=${encodeURIComponent(redirectUrl)}`} className="text-primary hover:underline font-semibold">
                             Sign up
                         </Link>

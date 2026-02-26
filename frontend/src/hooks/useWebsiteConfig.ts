@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { db, storage } from "@/lib/firebase";
-import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, orderBy } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export interface WebsiteConfig {
@@ -139,9 +139,11 @@ export function usePublicWebsiteConfig(storeSlug: string) {
             return;
         }
 
+        let resolved = false;
+
         // Set a timeout to prevent indefinite loading
         const timeoutId = setTimeout(() => {
-            if (loading) {
+            if (!resolved) {
                 console.warn(`Timeout resolving tenant: ${storeSlug}. Using defaults.`);
                 setConfig(defaultConfig);
                 setLoading(false);
@@ -159,6 +161,8 @@ export function usePublicWebsiteConfig(storeSlug: string) {
                     return;
                 }
                 const tenant = await getTenantByStoreId(storeSlug.toLowerCase()) || await getTenantByStoreId(storeSlug);
+                resolved = true;
+                clearTimeout(timeoutId);
                 if (tenant) {
                     setTenantId(tenant.id);
                 } else {
@@ -166,12 +170,12 @@ export function usePublicWebsiteConfig(storeSlug: string) {
                     setConfig(defaultConfig);
                     setLoading(false);
                 }
-                clearTimeout(timeoutId);
             } catch (error) {
                 console.error("Error resolving tenant:", error);
+                resolved = true;
+                clearTimeout(timeoutId);
                 setConfig(defaultConfig);
                 setLoading(false);
-                clearTimeout(timeoutId);
             }
         };
 
@@ -189,11 +193,14 @@ export function usePublicWebsiteConfig(storeSlug: string) {
 
         let brandData = {};
         let themeData = {};
+        let dataLoaded = false;
 
         const brandRef = doc(db, "tenants", tenantId, "brand", "config");
         const themeRef = doc(db, "tenants", tenantId, "theme", "config");
 
         const updateConfig = () => {
+            dataLoaded = true;
+            clearTimeout(timeoutId);
             setConfig({
                 ...defaultConfig,
                 ...brandData,
@@ -203,7 +210,7 @@ export function usePublicWebsiteConfig(storeSlug: string) {
         };
 
         const timeoutId = setTimeout(() => {
-            if (loading) {
+            if (!dataLoaded) {
                 console.warn(`Timeout fetching config for tenant: ${tenantId}. Using defaults.`);
                 setConfig(defaultConfig);
                 setLoading(false);
@@ -213,15 +220,15 @@ export function usePublicWebsiteConfig(storeSlug: string) {
         const unsubBrand = onSnapshot(brandRef, (snapshot) => {
             if (snapshot.exists()) {
                 brandData = snapshot.data();
-                updateConfig();
             }
+            updateConfig();
         });
 
         const unsubTheme = onSnapshot(themeRef, (snapshot) => {
             if (snapshot.exists()) {
                 themeData = snapshot.data();
-                updateConfig();
             }
+            updateConfig();
         });
 
         return () => {
@@ -232,4 +239,27 @@ export function usePublicWebsiteConfig(storeSlug: string) {
     }, [tenantId]);
 
     return { config, tenantId, loading };
+}
+
+// Public hook - for storefront navigation (reads custom pages)
+export function usePublicCustomPages(tenantId: string | null) {
+    const [customPages, setCustomPages] = useState<{ title: string; slug: string; order: number }[]>([]);
+
+    useEffect(() => {
+        if (!tenantId || !db) return;
+
+        const pagesRef = collection(db, "tenants", tenantId, "pages", "custom", "items");
+        const q = query(pagesRef, orderBy("order", "asc"));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs
+                .map((d) => d.data() as { title: string; slug: string; order: number; isPublished?: boolean; showInNav?: boolean })
+                .filter((p) => p.isPublished && p.showInNav);
+            setCustomPages(data);
+        });
+
+        return () => unsubscribe();
+    }, [tenantId]);
+
+    return { customPages };
 }

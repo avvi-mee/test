@@ -18,7 +18,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ tenantId: 
 
     useEffect(() => {
         let isMounted = true;
-        let unsubs: (() => void)[] = [];
+        const unsubs: (() => void)[] = [];
 
         const setupListeners = async () => {
             if (!storeSlug) {

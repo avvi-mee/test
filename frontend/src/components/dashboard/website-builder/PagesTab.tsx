@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Home, Briefcase, MessageSquare, Info, Phone, FileText, Layout } from "lucide-react";
+import { Home, Briefcase, MessageSquare, Info, Phone, FileText, Layout, Globe } from "lucide-react";
 
 // Import page editors
 import HomePageEditor from "./pages/HomePageEditor";
@@ -11,6 +11,7 @@ import TestimonialsPageEditor from "./pages/TestimonialsPageEditor";
 import AboutPageEditor from "./pages/AboutPageEditor";
 import ContactPageEditor from "./pages/ContactPageEditor";
 import ServicesPageEditor from "./pages/ServicesPageEditor";
+import CustomPagesEditor from "./pages/CustomPagesEditor";
 
 interface PagesTabProps {
     tenantId: string;
@@ -36,7 +37,7 @@ export default function PagesTab({ tenantId }: PagesTabProps) {
 
             {/* Pages Sub-Tabs */}
             <Tabs defaultValue="home" className="space-y-6">
-                <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 h-auto bg-gray-100 rounded-xl p-1">
+                <TabsList className="grid w-full grid-cols-4 md:grid-cols-7 h-auto bg-gray-100 rounded-xl p-1">
                     <TabsTrigger
                         value="home"
                         className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm flex items-center gap-2 py-3"
@@ -79,6 +80,13 @@ export default function PagesTab({ tenantId }: PagesTabProps) {
                         <Phone className="h-4 w-4" />
                         <span className="hidden sm:inline">Contact</span>
                     </TabsTrigger>
+                    <TabsTrigger
+                        value="custom-pages"
+                        className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm flex items-center gap-2 py-3"
+                    >
+                        <Globe className="h-4 w-4" />
+                        <span className="hidden sm:inline">Custom Pages</span>
+                    </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="home">
@@ -103,6 +111,10 @@ export default function PagesTab({ tenantId }: PagesTabProps) {
 
                 <TabsContent value="contact">
                     <ContactPageEditor tenantId={tenantId} />
+                </TabsContent>
+
+                <TabsContent value="custom-pages">
+                    <CustomPagesEditor tenantId={tenantId} />
                 </TabsContent>
             </Tabs>
         </div>

@@ -70,12 +70,21 @@ export interface CTASection {
     buttonLink: string;
 }
 
+export interface CustomContentSection {
+    id: string;
+    title: string;
+    description: string;
+    imageUrl: string;
+    order: number;
+}
+
 export interface HomePageContent {
     heroSlides: HeroSlide[];
     aboutPreview: AboutPreviewSection;
     services: Service[];
     whyChooseUs: WhyChooseUsItem[];
     cta: CTASection;
+    customSections?: CustomContentSection[];
     updatedAt?: any;
 }
 
@@ -155,6 +164,23 @@ export interface ContactPageContent {
     instagramUrl: string;
     facebookUrl: string;
     officeHours: string;
+    updatedAt?: any;
+}
+
+// ============================================
+// CUSTOM PAGES
+// ============================================
+export interface CustomPage {
+    id: string;
+    title: string;
+    slug: string;
+    heading: string;
+    description: string;
+    imageUrl: string;
+    showInNav: boolean;
+    isPublished: boolean;
+    order: number;
+    createdAt?: any;
     updatedAt?: any;
 }
 
