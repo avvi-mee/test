@@ -1,64 +1,52 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { getSupabase } from "@/lib/supabase";
 import { Order } from "./useOrders";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
-export function useStorefrontOrders({ tenantId, userEmail }: { tenantId: string, userEmail: string | null }) {
-    const [orders, setOrders] = useState<Order[]>([]);
-    const [loading, setLoading] = useState(true);
+const STOREFRONT_COLS = "id,tenant_id,customer_name,customer_email,customer_phone,customer_city,segment,plan,carpet_area,line_items,total_amount,status,assigned_to,pdf_url,valid_until,created_at,updated_at";
 
-    useEffect(() => {
-        if (!tenantId || !userEmail) {
-            setLoading(false);
-            setOrders([]);
-            return;
-        }
+function mapRow(row: any): Order {
+  return {
+    id: row.id,
+    customerName: row.customer_name ?? undefined,
+    customerPhone: row.customer_phone ?? undefined,
+    customerEmail: row.customer_email ?? undefined,
+    customerCity: row.customer_city ?? undefined,
+    segment: row.segment ?? undefined,
+    plan: row.plan ?? undefined,
+    carpetArea: row.carpet_area ?? undefined,
+    totalAmount: row.total_amount ?? undefined,
+    status: row.status || "draft",
+    createdAt: row.created_at ?? undefined,
+    tenantId: row.tenant_id ?? "",
+    pdfUrl: row.pdf_url ?? undefined,
+    assignedTo: row.assigned_to ?? undefined,
+    clientName: row.customer_name ?? undefined,
+    clientPhone: row.customer_phone ?? undefined,
+    clientEmail: row.customer_email ?? undefined,
+    estimatedAmount: row.total_amount ?? undefined,
+  };
+}
 
-        // Fetch from the new estimates subcollection
-        const estimatesRef = collection(db, `tenants/${tenantId}/estimates`);
+export function useStorefrontOrders({ tenantId, userEmail }: { tenantId: string; userEmail: string | null }) {
+  const { data: orders = [], isLoading: loading } = useRealtimeQuery<Order[]>({
+    queryKey: ["storefront-orders", tenantId, userEmail],
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("estimates")
+        .select(STOREFRONT_COLS)
+        .eq("tenant_id", tenantId)
+        .eq("customer_email", userEmail!)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapRow);
+    },
+    table: "estimates",
+    filter: `tenant_id=eq.${tenantId}`,
+    enabled: !!tenantId && !!userEmail,
+  });
 
-        // Filter by customer email
-        const q = query(
-            estimatesRef,
-            where("customerInfo.email", "==", userEmail),
-            // Note: orderBy requires an index if used with where on a different field. 
-            // If this fails, we might need to remove orderBy and sort client-side, or create the index.
-            // For now, let's try without orderBy and sort client-side to avoid index errors immediately.
-            // orderBy("createdAt", "desc") 
-        );
-
-        const unsubscribe = onSnapshot(
-            q,
-            (snapshot) => {
-                const ordersData = snapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return {
-                        id: doc.id,
-                        ...data,
-                        status: data.status || 'pending'
-                    };
-                }) as Order[];
-
-                // Client-side sort
-                ordersData.sort((a, b) => {
-                    const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                    const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                    return dateB.getTime() - dateA.getTime();
-                });
-
-                setOrders(ordersData);
-                setLoading(false);
-            },
-            (error) => {
-                console.error("Error fetching storefront orders:", error);
-                setLoading(false);
-            }
-        );
-
-        return () => unsubscribe();
-    }, [tenantId, userEmail]);
-
-    return { orders, loading };
+  return { orders, loading };
 }

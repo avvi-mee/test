@@ -1,23 +1,43 @@
+export interface TaskAttachment {
+  name: string;
+  url: string;
+  uploadedAt: any;
+  uploadedBy: string;
+}
+
+export interface TaskComment {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  createdAt: any;
+  isInternal: boolean; // true = hidden from client portal
+}
+
 export interface Phase {
   id: string;
   name: string;
   order: number;
-  status: "pending" | "in_progress" | "completed";
+  status: "pending" | "in_progress" | "completed" | "skipped";
   tasks: Task[];
   progressPercentage?: number;
   isDelayed?: boolean;
+  startDate?: any;
+  endDate?: any;
 }
 
 export interface Task {
   id: string;
   name: string;
-  status: "pending" | "in_progress" | "completed";
+  status: "pending" | "in_progress" | "completed" | "blocked";
   assignedTo?: string;
-  assignedToName?: string;
   dueDate?: any;
   completedAt?: any;
   notes?: string;
   isOverdue?: boolean;
+  progress: number; // 0-100
+  attachments: TaskAttachment[];
+  comments: TaskComment[];
 }
 
 function generateId(): string {
@@ -33,7 +53,10 @@ function buildPhase(name: string, order: number, taskNames: string[]): Phase {
     tasks: taskNames.map((t) => ({
       id: generateId(),
       name: t,
-      status: "pending",
+      status: "pending" as const,
+      progress: 0,
+      attachments: [],
+      comments: [],
     })),
   };
 }

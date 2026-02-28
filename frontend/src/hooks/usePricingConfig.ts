@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getSupabase } from "@/lib/supabase";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
 // New three-tier pricing structure
 export interface PricingItem {
@@ -13,6 +14,8 @@ export interface PricingItem {
     standardPrice: number;
     luxePrice: number;
     enabled: boolean;
+    defaultQuantity?: number;
+    planVisibility?: ('Basic' | 'Standard' | 'Luxe')[];
 }
 
 export interface Category {
@@ -27,6 +30,37 @@ export interface DropdownOption {
     id: string;
     name: string;
     enabled: boolean;
+}
+
+export interface RateSlab {
+    id: string;
+    minSqft: number;
+    maxSqft: number;
+    multiplier: number;
+    label?: string;
+}
+
+export interface CarpetAreaSettings {
+    minSqft: number;
+    maxSqft: number;
+    basePricePerSqft?: number;
+    rateSlabs?: RateSlab[];
+}
+
+export interface AdditionalCharge {
+    id: string;
+    label: string;
+    type: 'percentage' | 'fixed';
+    value: number;
+    enabled: boolean;
+}
+
+export interface CalculationRules {
+    gstPercent?: number;
+    discountPercent?: number;
+    designFeePercent?: number;
+    additionalCharges?: AdditionalCharge[];
+    roundToNearest?: number;
 }
 
 export interface PricingConfig {
@@ -51,6 +85,12 @@ export interface PricingConfig {
         counts: BedroomCount[];
         [key: string]: any;
     };
+
+    // New fields
+    version?: number;
+    active?: boolean;
+    carpetAreaSettings?: CarpetAreaSettings;
+    calculationRules?: CalculationRules;
 
     lastUpdated: any;
 }
@@ -100,138 +140,6 @@ export interface BedroomCount {
     count: number;
     basePrice: number;
     enabled: boolean;
-}
-
-// Migration helper: Convert legacy config to new format
-function migrateLegacyConfig(oldConfig: PricingConfig): PricingConfig {
-    const categories: Category[] = [];
-    let order = 0;
-
-    // Migrate Living Area
-    if (oldConfig.livingArea) {
-        const livingAreaItems: PricingItem[] = Object.entries(oldConfig.livingArea).map(([key, option]) => ({
-            id: `la_${key}`,
-            name: key.replace(/([A-Z])/g, ' $1').trim(),
-            type: 'fixed' as const,
-            basicPrice: Math.round(option.price * 0.8),
-            standardPrice: option.price,
-            luxePrice: Math.round(option.price * 1.2),
-            enabled: option.enabled
-        }));
-
-        if (livingAreaItems.length > 0) {
-            categories.push({
-                id: 'living_area',
-                name: 'Living Area',
-                order: order++,
-                items: livingAreaItems
-            });
-        }
-    }
-
-    // Migrate Kitchen Add-ons
-    if (oldConfig.kitchen?.addOns) {
-        const kitchenItems: PricingItem[] = oldConfig.kitchen.addOns.map(addon => ({
-            id: addon.id,
-            name: addon.name,
-            type: 'perUnit' as const,
-            basicPrice: Math.round(addon.price * 0.8),
-            standardPrice: addon.price,
-            luxePrice: Math.round(addon.price * 1.2),
-            enabled: addon.enabled
-        }));
-
-        categories.push({
-            id: 'kitchen_addons',
-            name: 'Kitchen Add-ons',
-            order: order++,
-            items: kitchenItems
-        });
-    }
-
-    // Migrate Bedrooms
-    if (oldConfig.bedrooms) {
-        const bedroomItems: PricingItem[] = [];
-
-        // Add bedroom count options as items
-        if (oldConfig.bedrooms.counts) {
-            oldConfig.bedrooms.counts.forEach(bc => {
-                bedroomItems.push({
-                    id: `br_count_${bc.count}`,
-                    name: `${bc.count} Bedroom(s)`,
-                    type: 'fixed' as const,
-                    basicPrice: Math.round(bc.basePrice * 0.8),
-                    standardPrice: bc.basePrice,
-                    luxePrice: Math.round(bc.basePrice * 1.2),
-                    enabled: bc.enabled
-                });
-            });
-        }
-
-        // Add bedroom options
-        if (oldConfig.bedrooms.masterBedroom) {
-            bedroomItems.push({
-                id: 'br_master',
-                name: 'Master Bedroom',
-                type: 'fixed' as const,
-                basicPrice: Math.round((oldConfig.bedrooms.masterBedroom as any).additionalPrice * 0.8),
-                standardPrice: (oldConfig.bedrooms.masterBedroom as any).additionalPrice,
-                luxePrice: Math.round((oldConfig.bedrooms.masterBedroom as any).additionalPrice * 1.2),
-                enabled: oldConfig.bedrooms.masterBedroom.enabled
-            });
-        }
-
-        if (oldConfig.bedrooms.wardrobe) {
-            bedroomItems.push({
-                id: 'br_wardrobe',
-                name: 'Wardrobe',
-                type: 'perUnit' as const,
-                basicPrice: Math.round((oldConfig.bedrooms.wardrobe as any).pricePerBedroom * 0.8),
-                standardPrice: (oldConfig.bedrooms.wardrobe as any).pricePerBedroom,
-                luxePrice: Math.round((oldConfig.bedrooms.wardrobe as any).pricePerBedroom * 1.2),
-                enabled: oldConfig.bedrooms.wardrobe.enabled
-            });
-        }
-
-        if (bedroomItems.length > 0) {
-            categories.push({
-                id: 'bedroom',
-                name: 'Bedroom',
-                order: order++,
-                items: bedroomItems
-            });
-        }
-    }
-
-    // Create kitchen layouts from old kitchen layouts
-    const kitchenLayouts: DropdownOption[] = oldConfig.kitchen?.layouts.map(layout => ({
-        id: layout.id,
-        name: layout.name,
-        enabled: layout.enabled
-    })) || [
-            { id: 'kl1', name: 'L-Shape', enabled: true },
-            { id: 'kl2', name: 'U-Shape', enabled: true },
-            { id: 'kl3', name: 'Parallel', enabled: true },
-            { id: 'kl4', name: 'Island', enabled: true }
-        ];
-
-    // Create kitchen materials from old wood types
-    const kitchenMaterials: DropdownOption[] = oldConfig.kitchen?.woodTypes.map(wt => ({
-        id: wt.id,
-        name: wt.name,
-        enabled: wt.enabled
-    })) || [
-            { id: 'wt1', name: 'Marine Ply', enabled: true },
-            { id: 'wt2', name: 'BWP Ply', enabled: true },
-            { id: 'wt3', name: 'HDHMR', enabled: true }
-        ];
-
-    return {
-        categories,
-        kitchenLayouts,
-        kitchenMaterials,
-        lastUpdated: serverTimestamp()
-    };
 }
 
 // Create default new format config
@@ -338,60 +246,93 @@ function createDefaultConfig(): PricingConfig {
             { id: 'km4', name: 'MDF', enabled: true },
             { id: 'km5', name: 'Plywood', enabled: true }
         ],
-        lastUpdated: serverTimestamp()
+        carpetAreaSettings: {
+            minSqft: 200,
+            maxSqft: 10000,
+        },
+        calculationRules: {
+            gstPercent: 0,
+            discountPercent: 0,
+            designFeePercent: 0,
+            additionalCharges: [],
+        },
+        version: 1,
+        active: true,
+        lastUpdated: new Date().toISOString()
     };
 }
 
 export function usePricingConfig(tenantId: string | null) {
-    const [config, setConfig] = useState<PricingConfig | null>(null);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
+    const qk = ["pricing-config", tenantId] as const;
 
-    useEffect(() => {
-        if (!tenantId) {
-            setLoading(false);
-            return;
-        }
+    const { data: config = null, isLoading: loading } = useRealtimeQuery<PricingConfig | null>({
+        queryKey: qk,
+        queryFn: async () => {
+            const supabase = getSupabase();
+            const { data, error } = await supabase
+                .from("pricing_configs")
+                .select("*")
+                .eq("tenant_id", tenantId!)
+                .maybeSingle();
 
-        setLoading(true);
-        const configRef = doc(db, "pricing_configs", tenantId);
-
-        const unsubscribe = onSnapshot(configRef, (snapshot) => {
-            if (snapshot.exists()) {
-                const data = snapshot.data() as PricingConfig;
-
-                // Migration check - if it's old format, we just set it and let the component handle it
-                if (!data.categories && (data.roomPricing || data.livingArea || data.kitchen || data.bedrooms)) {
-                    console.log("Legacy pricing config detected...");
-                    const migrated = migrateLegacyConfig(data);
-                    setConfig(migrated);
-                } else if (!data.categories || data.categories.length === 0) {
-                    // No categories or empty array, use default to avoid blank UI
-                    console.log("No categories found, using default config");
-                    setConfig(createDefaultConfig());
-                } else {
-                    setConfig(data);
-                }
-            } else {
-                // Initialize default config if none exists
-                setConfig(createDefaultConfig());
+            if (error) {
+                console.error("Pricing config fetch error:", error);
+                return createDefaultConfig();
             }
-            setLoading(false);
-        }, (err) => {
-            console.error("Pricing config listener error:", err);
-            setLoading(false);
-        });
 
-        return () => unsubscribe();
-    }, [tenantId]);
+            if (!data) {
+                return createDefaultConfig();
+            }
+
+            const parsed: PricingConfig = {
+                categories: data.categories || [],
+                kitchenLayouts: data.kitchen_layouts || [],
+                kitchenMaterials: data.kitchen_materials || [],
+                carpetAreaSettings: data.carpet_area_settings || undefined,
+                calculationRules: data.calculation_rules || undefined,
+                version: data.version || 1,
+                active: true,
+                lastUpdated: data.updated_at,
+            };
+
+            if (!parsed.categories || parsed.categories.length === 0) {
+                return createDefaultConfig();
+            }
+
+            return parsed;
+        },
+        table: "pricing_configs",
+        filter: `tenant_id=eq.${tenantId}`,
+        enabled: !!tenantId,
+    });
+
+    const invalidate = useCallback(
+        () => queryClient.invalidateQueries({ queryKey: qk }),
+        [queryClient, qk]
+    );
 
     const saveConfig = async (newConfig: PricingConfig) => {
         if (!tenantId) return;
         try {
-            const configRef = doc(db, "pricing_configs", tenantId);
-            await setDoc(configRef, {
-                ...newConfig,
-                lastUpdated: serverTimestamp()
-            });
+            const supabase = getSupabase();
+            const { error } = await supabase
+                .from("pricing_configs")
+                .upsert(
+                    {
+                        tenant_id: tenantId,
+                        categories: newConfig.categories || [],
+                        kitchen_layouts: newConfig.kitchenLayouts || [],
+                        kitchen_materials: newConfig.kitchenMaterials || [],
+                        carpet_area_settings: newConfig.carpetAreaSettings || null,
+                        calculation_rules: newConfig.calculationRules || null,
+                        version: (newConfig.version || 0) + 1,
+                    },
+                    { onConflict: "tenant_id" }
+                );
+
+            if (error) throw error;
+            invalidate();
             return true;
         } catch (error) {
             console.error("Error saving pricing config:", error);

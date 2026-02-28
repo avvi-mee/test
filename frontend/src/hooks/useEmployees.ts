@@ -1,124 +1,75 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { db } from "@/lib/firebase";
-import {
-  collection,
-  addDoc,
-  query,
-  onSnapshot,
-  serverTimestamp,
-  orderBy,
-  doc,
-  deleteDoc,
-  updateDoc,
-} from "firebase/firestore";
+// =============================================================================
+// v2: Backward-compatibility shim
+// The employees table is gone. Team members are now in tenant_users + users + roles.
+// This file re-exports useTeam as useEmployees with a compatible interface.
+// New code should import from useTeam.ts directly.
+// =============================================================================
 
+import { useTeam, type TeamMember } from "./useTeam";
+
+// Backward-compat Employee interface that maps TeamMember fields
 export interface Employee {
   id: string;
   name: string;
   email: string;
-  password?: string;
   area: string;
   phone: string;
-  totalWork: number;
-  currentWork: string;
-  upcomingWork?: string;
-  role: "owner" | "sales" | "designer" | "project_manager" | "site_supervisor";
-  assignedLeads?: string[];
-  assignedProjects?: string[];
+  role: string;
+  roles: string[];
   isActive: boolean;
   tenantId: string;
+  authUid?: string;
   createdAt?: any;
 }
 
+function toEmployee(m: TeamMember): Employee {
+  return {
+    id: m.id,
+    name: m.fullName,
+    email: m.email,
+    area: m.area,
+    phone: m.phone,
+    role: m.roles[0] || "member",
+    roles: m.roles,
+    isActive: m.isActive,
+    tenantId: m.tenantId,
+    authUid: m.userId,
+    createdAt: m.joinedAt,
+  };
+}
+
 export function useEmployees(tenantId: string | null) {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  const team = useTeam(tenantId);
 
-  useEffect(() => {
-    if (!tenantId) {
-      setLoading(false);
-      return;
-    }
+  const employees = team.members.map(toEmployee);
 
-    const q = query(
-      collection(db, "tenants", tenantId, "employees"),
-      orderBy("createdAt", "desc")
-    );
+  const addEmployee = async (data: Omit<Employee, "id" | "tenantId" | "createdAt">) => {
+    return team.addMember({
+      email: data.email,
+      fullName: data.name,
+      phone: data.phone,
+      area: data.area,
+      roles: data.roles || [data.role],
+    });
+  };
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const empList = snapshot.docs.map((d) => ({
-          id: d.id,
-          role: "designer",
-          isActive: true,
-          ...d.data(),
-        })) as Employee[];
-        setEmployees(empList);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching employees:", error);
-        setLoading(false);
-      }
-    );
+  const updateEmployee = async (employeeId: string, updates: Partial<Employee>) => {
+    return team.updateMember(employeeId, {
+      fullName: updates.name,
+      phone: updates.phone,
+      area: updates.area,
+      isActive: updates.isActive,
+    });
+  };
 
-    return () => unsubscribe();
-  }, [tenantId]);
+  const deleteEmployee = async (employeeId: string) => {
+    return team.removeMember(employeeId);
+  };
 
-  const addEmployee = useCallback(
-    async (data: Omit<Employee, "id" | "tenantId" | "createdAt">) => {
-      if (!tenantId) return null;
-      try {
-        const ref = await addDoc(collection(db, "tenants", tenantId, "employees"), {
-          ...data,
-          tenantId,
-          createdAt: serverTimestamp(),
-        });
-        return ref.id;
-      } catch (error) {
-        console.error("Error adding employee:", error);
-        return null;
-      }
-    },
-    [tenantId]
-  );
+  const getEmployeesByRole = (role: string) =>
+    employees.filter((e) => (e.roles.includes(role) || e.role === role) && e.isActive);
 
-  const updateEmployee = useCallback(
-    async (employeeId: string, updates: Partial<Employee>) => {
-      if (!tenantId) return false;
-      try {
-        const ref = doc(db, "tenants", tenantId, "employees", employeeId);
-        await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
-        return true;
-      } catch (error) {
-        console.error("Error updating employee:", error);
-        return false;
-      }
-    },
-    [tenantId]
-  );
-
-  const deleteEmployee = useCallback(
-    async (employeeId: string) => {
-      if (!tenantId) return false;
-      try {
-        await deleteDoc(doc(db, "tenants", tenantId, "employees", employeeId));
-        return true;
-      } catch (error) {
-        console.error("Error deleting employee:", error);
-        return false;
-      }
-    },
-    [tenantId]
-  );
-
-  const getEmployeesByRole = useCallback(
-    (role: Employee["role"]) => employees.filter((e) => e.role === role && e.isActive),
-    [employees]
-  );
-
-  return { employees, loading, addEmployee, updateEmployee, deleteEmployee, getEmployeesByRole };
+  return { employees, loading: team.loading, addEmployee, updateEmployee, deleteEmployee, getEmployeesByRole };
 }

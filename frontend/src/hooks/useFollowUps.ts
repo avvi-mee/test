@@ -1,17 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { db } from "@/lib/firebase";
-import {
-  collection,
-  addDoc,
-  query,
-  onSnapshot,
-  doc,
-  updateDoc,
-  serverTimestamp,
-  Timestamp,
-} from "firebase/firestore";
+import { useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getSupabase } from "@/lib/supabase";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
 export interface FollowUp {
   id: string;
@@ -27,149 +19,135 @@ export interface FollowUp {
   createdByName?: string;
 }
 
+function mapRow(row: any): FollowUp {
+  return {
+    id: row.id,
+    leadId: row.lead_id ?? "",
+    tenantId: row.tenant_id ?? "",
+    type: row.type ?? "call",
+    scheduledAt: row.scheduled_at ?? null,
+    completedAt: row.completed_at ?? undefined,
+    status: row.status ?? "pending",
+    notes: row.notes ?? undefined,
+    outcome: row.outcome ?? undefined,
+    createdBy: row.created_by ?? undefined,
+    createdByName: row.created_by_name ?? undefined,
+  };
+}
+
 export function useFollowUps(tenantId: string | null) {
-  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const qk = ["follow-ups", tenantId] as const;
 
-  useEffect(() => {
-    if (!tenantId) {
-      setLoading(false);
-      return;
-    }
+  const { data: followUps = [], isLoading: loading } = useRealtimeQuery<FollowUp[]>({
+    queryKey: qk,
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("follow_ups")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .order("scheduled_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map(mapRow);
+    },
+    table: "follow_ups",
+    filter: `tenant_id=eq.${tenantId}`,
+    enabled: !!tenantId,
+  });
 
-    const followUpsRef = collection(db, `tenants/${tenantId}/followUps`);
-    const q = query(followUpsRef);
+  const invalidate = useCallback(() => queryClient.invalidateQueries({ queryKey: qk }), [queryClient, qk]);
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        })) as FollowUp[];
-
-        data.sort((a, b) => {
-          const aTime = a.scheduledAt?.toMillis ? a.scheduledAt.toMillis() : 0;
-          const bTime = b.scheduledAt?.toMillis ? b.scheduledAt.toMillis() : 0;
-          return aTime - bTime;
-        });
-
-        setFollowUps(data);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching follow-ups:", error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [tenantId]);
-
-  const now = useMemo(() => {
-    const d = new Date();
-    return d;
-  }, []);
-
-  const todayStart = useMemo(() => {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return d.getTime();
-  }, [now]);
-
+  const now = useMemo(() => new Date(), []);
+  const todayStart = useMemo(() => new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), [now]);
   const todayEnd = useMemo(() => todayStart + 86400000, [todayStart]);
 
   const todayFollowUps = useMemo(
-    () =>
-      followUps.filter((f) => {
-        if (f.status !== "pending") return false;
-        const t = f.scheduledAt?.toMillis ? f.scheduledAt.toMillis() : 0;
-        return t >= todayStart && t < todayEnd;
-      }),
+    () => followUps.filter((f) => {
+      if (f.status !== "pending") return false;
+      const t = f.scheduledAt ? new Date(f.scheduledAt).getTime() : 0;
+      return t >= todayStart && t < todayEnd;
+    }),
     [followUps, todayStart, todayEnd]
   );
 
   const overdueFollowUps = useMemo(
-    () =>
-      followUps.filter((f) => {
-        if (f.status !== "pending") return false;
-        const t = f.scheduledAt?.toMillis ? f.scheduledAt.toMillis() : 0;
-        return t > 0 && t < todayStart;
-      }),
+    () => followUps.filter((f) => {
+      if (f.status !== "pending") return false;
+      const t = f.scheduledAt ? new Date(f.scheduledAt).getTime() : 0;
+      return t > 0 && t < todayStart;
+    }),
     [followUps, todayStart]
   );
 
-  const addFollowUp = useCallback(
-    async (data: Omit<FollowUp, "id">) => {
-      if (!tenantId) return "";
-      try {
-        const ref = await addDoc(collection(db, `tenants/${tenantId}/followUps`), data);
-        return ref.id;
-      } catch (error) {
-        console.error("Error adding follow-up:", error);
-        return "";
-      }
-    },
-    [tenantId]
-  );
+  const addFollowUp = useCallback(async (data: Omit<FollowUp, "id">) => {
+    if (!tenantId) return "";
+    try {
+      const supabase = getSupabase();
+      const { data: inserted, error } = await supabase
+        .from("follow_ups")
+        .insert({
+          lead_id: data.leadId,
+          tenant_id: tenantId,
+          type: data.type,
+          scheduled_at: data.scheduledAt,
+          status: data.status || "pending",
+          notes: data.notes || null,
+          outcome: data.outcome || null,
+          created_by: data.createdBy || null,
+          created_by_name: data.createdByName || null,
+        })
+        .select()
+        .single();
+      if (error) { console.error("Error adding follow-up:", error); return ""; }
+      invalidate();
+      return inserted?.id ?? "";
+    } catch (error) { console.error("Error adding follow-up:", error); return ""; }
+  }, [tenantId, invalidate]);
 
-  const completeFollowUp = useCallback(
-    async (followUpId: string, outcome: string) => {
-      if (!tenantId) return false;
-      try {
-        const ref = doc(db, `tenants/${tenantId}/followUps`, followUpId);
-        await updateDoc(ref, {
-          status: "completed",
-          outcome,
-          completedAt: serverTimestamp(),
+  const completeFollowUp = useCallback(async (followUpId: string, outcome: string) => {
+    if (!tenantId) return false;
+    try {
+      const supabase = getSupabase();
+      const { error } = await supabase
+        .from("follow_ups")
+        .update({ status: "completed", outcome, completed_at: new Date().toISOString() })
+        .eq("id", followUpId);
+      if (error) { console.error("Error completing follow-up:", error); return false; }
+      invalidate();
+      return true;
+    } catch (error) { console.error("Error completing follow-up:", error); return false; }
+  }, [tenantId, invalidate]);
+
+  const rescheduleFollowUp = useCallback(async (followUpId: string, newDate: string | Date) => {
+    if (!tenantId) return false;
+    try {
+      const supabase = getSupabase();
+      const scheduledAt = typeof newDate === "string" ? newDate : newDate.toISOString();
+
+      const { error: updateError } = await supabase
+        .from("follow_ups")
+        .update({ status: "rescheduled" })
+        .eq("id", followUpId);
+      if (updateError) { console.error("Error rescheduling follow-up:", updateError); return false; }
+
+      const original = followUps.find((f) => f.id === followUpId);
+      if (original) {
+        await supabase.from("follow_ups").insert({
+          lead_id: original.leadId,
+          tenant_id: tenantId,
+          type: original.type,
+          scheduled_at: scheduledAt,
+          status: "pending",
+          notes: original.notes || null,
+          created_by: original.createdBy || null,
+          created_by_name: original.createdByName || null,
         });
-        return true;
-      } catch (error) {
-        console.error("Error completing follow-up:", error);
-        return false;
       }
-    },
-    [tenantId]
-  );
+      invalidate();
+      return true;
+    } catch (error) { console.error("Error rescheduling follow-up:", error); return false; }
+  }, [tenantId, followUps, invalidate]);
 
-  const rescheduleFollowUp = useCallback(
-    async (followUpId: string, newDate: Timestamp) => {
-      if (!tenantId) return false;
-      try {
-        const ref = doc(db, `tenants/${tenantId}/followUps`, followUpId);
-        await updateDoc(ref, {
-          status: "rescheduled",
-          scheduledAt: newDate,
-        });
-        // Create a new pending follow-up
-        const original = followUps.find((f) => f.id === followUpId);
-        if (original) {
-          await addDoc(collection(db, `tenants/${tenantId}/followUps`), {
-            leadId: original.leadId,
-            tenantId,
-            type: original.type,
-            scheduledAt: newDate,
-            status: "pending",
-            notes: original.notes,
-            createdBy: original.createdBy,
-            createdByName: original.createdByName,
-          });
-        }
-        return true;
-      } catch (error) {
-        console.error("Error rescheduling follow-up:", error);
-        return false;
-      }
-    },
-    [tenantId, followUps]
-  );
-
-  return {
-    followUps,
-    todayFollowUps,
-    overdueFollowUps,
-    loading,
-    addFollowUp,
-    completeFollowUp,
-    rescheduleFollowUp,
-  };
+  return { followUps, todayFollowUps, overdueFollowUps, loading, addFollowUp, completeFollowUp, rescheduleFollowUp };
 }

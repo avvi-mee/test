@@ -1,61 +1,60 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { useState, useMemo } from "react";
+import { getSupabase } from "@/lib/supabase";
 import { Tenant } from "@/lib/firestoreHelpers";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
+
+function mapRow(row: any): Tenant {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    slug: row.slug,
+    status: row.status,
+    createdAt: row.created_at,
+    approvedAt: row.approved_at,
+    subscription: row.subscription ?? row.subscription_plan ?? "free",
+    settings: row.settings,
+  };
+}
 
 export function useCompanies() {
-    const [companies, setCompanies] = useState<Tenant[]>([]);
-    const [filteredCompanies, setFilteredCompanies] = useState<Tenant[]>([]);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
-    useEffect(() => {
-        const tenantsRef = collection(db, "tenants");
-        const q = query(tenantsRef, orderBy("createdAt", "desc"));
+  const { data: companies = [], isLoading: loading } = useRealtimeQuery<Tenant[]>({
+    queryKey: ["companies"],
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapRow);
+    },
+    table: "tenants",
+  });
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const companyList: Tenant[] = [];
+  const filteredCompanies = useMemo(() => {
+    if (!searchQuery.trim()) return companies;
+    const q = searchQuery.toLowerCase();
+    return companies.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        (c.slug ?? "").toLowerCase().includes(q)
+    );
+  }, [searchQuery, companies]);
 
-            snapshot.forEach((doc) => {
-                const data = doc.data();
-                companyList.push({ id: doc.id, ...data } as Tenant);
-            });
-
-            setCompanies(companyList);
-            setFilteredCompanies(companyList);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, []);
-
-    // Filter companies based on search query
-    useEffect(() => {
-        if (!searchQuery.trim()) {
-            setFilteredCompanies(companies);
-            return;
-        }
-
-        const searchLower = searchQuery.toLowerCase();
-        const filtered = companies.filter(
-            (company) =>
-                company.name.toLowerCase().includes(searchLower) ||
-                company.email.toLowerCase().includes(searchLower) ||
-                company.businessName.toLowerCase().includes(searchLower) ||
-                company.storeId.toLowerCase().includes(searchLower)
-        );
-
-        setFilteredCompanies(filtered);
-    }, [searchQuery, companies]);
-
-    return {
-        companies: filteredCompanies,
-        loading,
-        searchQuery,
-        setSearchQuery,
-        totalCount: companies.length,
-        filteredCount: filteredCompanies.length,
-    };
+  return {
+    companies: filteredCompanies,
+    loading,
+    searchQuery,
+    setSearchQuery,
+    totalCount: companies.length,
+    filteredCount: filteredCompanies.length,
+  };
 }

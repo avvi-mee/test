@@ -1,117 +1,110 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import {
-    collection,
-    onSnapshot,
-    addDoc,
-    updateDoc,
-    deleteDoc,
-    doc,
-    query,
-    orderBy,
-    serverTimestamp,
-} from "firebase/firestore";
+import { useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getSupabase } from "@/lib/supabase";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
 export interface City {
-    id: string;
-    name: string;
-    enabled: boolean;
-    tier?: 'Tier 1' | 'Tier 2' | 'Tier 3'; // Optional for future pricing logic
-    createdAt?: any;
+  id: string;
+  name: string;
+  enabled: boolean;
+  tier?: "Tier 1" | "Tier 2" | "Tier 3";
+  createdAt?: any;
+}
+
+function mapRow(row: any): City {
+  return {
+    id: row.id,
+    name: row.name,
+    enabled: row.is_enabled ?? row.enabled ?? true,
+    tier: row.tier ?? undefined,
+    createdAt: row.created_at,
+  };
 }
 
 export function useCities(tenantId: string | null) {
-    const [cities, setCities] = useState<City[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+  const qk = ["cities", tenantId] as const;
 
-    useEffect(() => {
-        if (!tenantId) {
-            setLoading(false);
-            return;
-        }
+  const { data: cities = [], isLoading: loading } = useRealtimeQuery<City[]>({
+    queryKey: qk,
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("cities")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map(mapRow);
+    },
+    table: "cities",
+    filter: `tenant_id=eq.${tenantId}`,
+    enabled: !!tenantId,
+  });
 
-        const citiesRef = collection(db, "tenants", tenantId, "cities");
-        const q = query(citiesRef, orderBy("name", "asc"));
+  const invalidate = useCallback(() => queryClient.invalidateQueries({ queryKey: qk }), [queryClient, qk]);
 
-        const unsubscribe = onSnapshot(
-            q,
-            (snapshot) => {
-                const cityData = snapshot.docs.map((doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
-                })) as City[];
-                setCities(cityData);
-                setLoading(false);
-            },
-            (error) => {
-                console.error("Error fetching cities:", error);
-                setLoading(false);
-            }
-        );
+  const addCity = useCallback(async (name: string): Promise<boolean> => {
+    if (!tenantId) return false;
+    setSaving(true);
+    try {
+      const supabase = getSupabase();
+      const { error } = await supabase.from("cities").insert({ tenant_id: tenantId, name, is_enabled: true });
+      if (error) throw error;
+      invalidate();
+      return true;
+    } catch (error) {
+      console.error("Error adding city:", error);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [tenantId, invalidate]);
 
-        return () => unsubscribe();
-    }, [tenantId]);
+  const updateCity = useCallback(async (id: string, updates: Partial<City>): Promise<boolean> => {
+    if (!tenantId) return false;
+    setSaving(true);
+    try {
+      const supabase = getSupabase();
+      const dbUpdates: Record<string, any> = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.enabled !== undefined) dbUpdates.is_enabled = updates.enabled;
+      if (updates.tier !== undefined) dbUpdates.tier = updates.tier;
+      const { error } = await supabase.from("cities").update(dbUpdates).eq("id", id);
+      if (error) throw error;
+      invalidate();
+      return true;
+    } catch (error) {
+      console.error("Error updating city:", error);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [tenantId, invalidate]);
 
-    const addCity = async (name: string): Promise<boolean> => {
-        if (!tenantId) return false;
-        setSaving(true);
-        try {
-            await addDoc(collection(db, "tenants", tenantId, "cities"), {
-                name,
-                enabled: true,
-                createdAt: serverTimestamp(),
-            });
-            return true;
-        } catch (error) {
-            console.error("Error adding city:", error);
-            return false;
-        } finally {
-            setSaving(false);
-        }
-    };
+  const deleteCity = useCallback(async (id: string): Promise<boolean> => {
+    if (!tenantId) return false;
+    setSaving(true);
+    try {
+      const supabase = getSupabase();
+      const { error } = await supabase.from("cities").delete().eq("id", id);
+      if (error) throw error;
+      invalidate();
+      return true;
+    } catch (error) {
+      console.error("Error deleting city:", error);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [tenantId, invalidate]);
 
-    const updateCity = async (id: string, updates: Partial<City>): Promise<boolean> => {
-        if (!tenantId) return false;
-        setSaving(true);
-        try {
-            await updateDoc(doc(db, "tenants", tenantId, "cities", id), updates);
-            return true;
-        } catch (error) {
-            console.error("Error updating city:", error);
-            return false;
-        } finally {
-            setSaving(false);
-        }
-    };
+  const toggleCity = useCallback(async (id: string, currentStatus: boolean): Promise<boolean> => {
+    return updateCity(id, { enabled: !currentStatus });
+  }, [updateCity]);
 
-    const deleteCity = async (id: string): Promise<boolean> => {
-        if (!tenantId) return false;
-        setSaving(true);
-        try {
-            await deleteDoc(doc(db, "tenants", tenantId, "cities", id));
-            return true;
-        } catch (error) {
-            console.error("Error deleting city:", error);
-            return false;
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const toggleCity = async (id: string, currentStatus: boolean): Promise<boolean> => {
-        return updateCity(id, { enabled: !currentStatus });
-    };
-
-    return {
-        cities,
-        loading,
-        saving,
-        addCity,
-        updateCity,
-        deleteCity,
-        toggleCity
-    };
+  return { cities, loading, saving, addCity, updateCity, deleteCity, toggleCity };
 }

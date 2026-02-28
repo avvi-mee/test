@@ -1,68 +1,58 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { useCallback } from "react";
+import { getSupabase } from "@/lib/supabase";
 import { Tenant, approveTenant, rejectTenant } from "@/lib/firestoreHelpers";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
+import { useQueryClient } from "@tanstack/react-query";
 
-export interface PendingApproval extends Tenant {
-    // Inherits all Tenant properties
+export interface PendingApproval extends Tenant {}
+
+function mapRow(row: any): PendingApproval {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    slug: row.slug,
+    status: row.status,
+    createdAt: row.created_at,
+    approvedAt: row.approved_at,
+    subscription: row.subscription ?? "free",
+    settings: row.settings,
+  };
 }
 
 export function usePendingApprovals() {
-    const [approvals, setApprovals] = useState<PendingApproval[]>([]);
-    const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-    useEffect(() => {
-        const tenantsRef = collection(db, "tenants");
-        const q = query(
-            tenantsRef,
-            where("status", "==", "pending")
-        );
+  const { data: approvals = [], isLoading: loading } = useRealtimeQuery<PendingApproval[]>({
+    queryKey: ["pending-approvals"],
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapRow);
+    },
+    table: "tenants",
+  });
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const pendingList: PendingApproval[] = [];
+  const handleApprove = useCallback(async (tenantId: string) => {
+    await approveTenant(tenantId);
+    queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
+    queryClient.invalidateQueries({ queryKey: ["companies"] });
+  }, [queryClient]);
 
-            snapshot.forEach((doc) => {
-                pendingList.push({ id: doc.id, ...doc.data() } as PendingApproval);
-            });
+  const handleReject = useCallback(async (tenantId: string) => {
+    await rejectTenant(tenantId);
+    queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
+    queryClient.invalidateQueries({ queryKey: ["companies"] });
+  }, [queryClient]);
 
-            // Sort client-side to avoid index requirement
-            pendingList.sort((a, b) => {
-                const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-                const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-                return timeB - timeA;
-            });
-
-            setApprovals(pendingList);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, []);
-
-    const handleApprove = async (tenantId: string) => {
-        try {
-            await approveTenant(tenantId);
-        } catch (error) {
-            console.error("Error approving tenant:", error);
-            throw error;
-        }
-    };
-
-    const handleReject = async (tenantId: string) => {
-        try {
-            await rejectTenant(tenantId);
-        } catch (error) {
-            console.error("Error rejecting tenant:", error);
-            throw error;
-        }
-    };
-
-    return {
-        approvals,
-        loading,
-        handleApprove,
-        handleReject,
-    };
+  return { approvals, loading, handleApprove, handleReject };
 }

@@ -1,44 +1,38 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { getSupabase } from "@/lib/supabase";
 import { Activity, formatRelativeTime } from "@/lib/firestoreHelpers";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
 export interface ActivityWithTime extends Activity {
-    relativeTime: string;
+  relativeTime: string;
 }
 
 export function useRecentActivity(maxItems: number = 10) {
-    const [activities, setActivities] = useState<ActivityWithTime[]>([]);
-    const [loading, setLoading] = useState(true);
+  const { data: activities = [], isLoading: loading } = useRealtimeQuery<ActivityWithTime[]>({
+    queryKey: ["recent-activities", maxItems],
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("activities")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(maxItems);
 
-    useEffect(() => {
-        const activitiesRef = collection(db, "activities");
-        const q = query(
-            activitiesRef,
-            orderBy("createdAt", "desc"),
-            limit(maxItems)
-        );
+      if (error) throw error;
+      return (data ?? []).map((row: any) => ({
+        id: row.id,
+        type: row.type,
+        description: row.description,
+        tenantId: row.tenant_id,
+        tenantName: row.tenant_name,
+        createdAt: row.created_at,
+        metadata: row.metadata,
+        relativeTime: row.created_at ? formatRelativeTime(row.created_at) : "Unknown",
+      }));
+    },
+    table: "activities",
+  });
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const activityList: ActivityWithTime[] = [];
-
-            snapshot.forEach((doc) => {
-                const data = doc.data() as Omit<Activity, 'id'>;
-                activityList.push({
-                    id: doc.id,
-                    ...data,
-                    relativeTime: data.createdAt ? formatRelativeTime(data.createdAt) : "Unknown",
-                });
-            });
-
-            setActivities(activityList);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [maxItems]);
-
-    return { activities, loading };
+  return { activities, loading };
 }

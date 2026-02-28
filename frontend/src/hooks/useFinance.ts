@@ -1,21 +1,36 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getSupabase } from "@/lib/supabase";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 import {
   Invoice,
+  AgingBucketLabel,
+  computeAgingBucket,
+  mapRowToInvoice,
   createInvoice as createInvoiceSvc,
   updateInvoice,
   addPaymentToInvoice,
 } from "@/lib/services/invoiceService";
 import {
   VendorBill,
+  mapRowToVendorBill,
   createVendorBill as createVendorBillSvc,
   addPaymentToVendorBill,
 } from "@/lib/services/vendorBillService";
 import type { Payment } from "@/lib/services/invoiceService";
 import type { VendorPayment } from "@/lib/services/vendorBillService";
+
+// =============================================================================
+// v2 changes:
+//   - invoices.balance is a GENERATED column (amount - paid_amount). Read-only.
+//   - vendor_bills.balance is a GENERATED column. Read-only.
+//   - No more aging_bucket column in DB. Computed client-side only.
+//   - vendor_bill_payments renamed to vendor_payments
+//   - invoice_payments / vendor_payments now have tenant_id
+//   - Column selection instead of SELECT *
+// =============================================================================
 
 export interface AgingBucket {
   current: number;   // 0-30 days
@@ -45,22 +60,43 @@ export interface ProjectFinanceSummary {
   vendorBills: VendorBill[];
 }
 
-function enrichOverdueStatus<T extends { status: string; paidAmount: number; amount: number; dueDate: any }>(
+// Column selections
+const INVOICE_COLS = "id,tenant_id,project_id,invoice_number,client_name,client_email,amount,paid_amount,balance,status,due_date,notes,created_at,updated_at";
+const VENDOR_BILL_COLS = "id,tenant_id,project_id,vendor_name,vendor_email,description,amount,paid_amount,balance,status,due_date,notes,created_at,updated_at";
+
+function parseDateMs(d: any): number | null {
+  if (!d) return null;
+  if (d instanceof Date) return d.getTime();
+  if (typeof d === "string") {
+    const ms = new Date(d).getTime();
+    return isNaN(ms) ? null : ms;
+  }
+  return null;
+}
+
+function enrichOverdueStatus<T extends { id: string; status: string; paidAmount: number; amount: number; dueDate: any }>(
   items: T[],
   overdueStatus: string
 ): T[] {
   const now = Date.now();
   return items.map((item) => {
     if (item.paidAmount >= item.amount) return item;
-    const dueDateMs = item.dueDate?.toMillis
-      ? item.dueDate.toMillis()
-      : item.dueDate instanceof Date
-      ? item.dueDate.getTime()
-      : null;
+    const dueDateMs = parseDateMs(item.dueDate);
     if (dueDateMs && dueDateMs < now && item.status !== "paid") {
       return { ...item, status: overdueStatus };
     }
     return item;
+  });
+}
+
+function enrichAgingBucket<T extends { dueDate: any; paidAmount: number; amount: number }>(
+  items: T[]
+): (T & { agingBucket: AgingBucketLabel })[] {
+  return items.map((item) => {
+    if (item.paidAmount >= item.amount) {
+      return { ...item, agingBucket: "current" as AgingBucketLabel };
+    }
+    return { ...item, agingBucket: computeAgingBucket(item.dueDate) };
   });
 }
 
@@ -70,11 +106,7 @@ function computeAging(items: Array<{ amount: number; paidAmount: number; dueDate
   for (const item of items) {
     const outstanding = item.amount - item.paidAmount;
     if (outstanding <= 0) continue;
-    const dueDateMs = item.dueDate?.toMillis
-      ? item.dueDate.toMillis()
-      : item.dueDate instanceof Date
-      ? item.dueDate.getTime()
-      : null;
+    const dueDateMs = parseDateMs(item.dueDate);
     if (!dueDateMs) {
       bucket.current += outstanding;
       continue;
@@ -89,46 +121,64 @@ function computeAging(items: Array<{ amount: number; paidAmount: number; dueDate
   return bucket;
 }
 
+// v2: No more persistAgingBuckets — aging_bucket column was removed.
+// Balance is now a GENERATED column, always correct.
+
+interface FinanceData {
+  invoices: Invoice[];
+  vendorBills: VendorBill[];
+}
+
 export function useFinance(tenantId: string | null) {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [vendorBills, setVendorBills] = useState<VendorBill[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const qk = ["finance", tenantId] as const;
 
-  // Listen to invoices
-  useEffect(() => {
-    if (!tenantId) {
-      setInvoices([]);
-      setLoading(false);
-      return;
-    }
-    const q = query(
-      collection(db, `tenants/${tenantId}/invoices`),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice));
-      setInvoices(enrichOverdueStatus(docs, "overdue"));
-      setLoading(false);
-    });
-    return () => unsub();
-  }, [tenantId]);
+  const { data, isLoading: loading } = useRealtimeQuery<FinanceData>({
+    queryKey: qk,
+    queryFn: async () => {
+      const supabase = getSupabase();
 
-  // Listen to vendor bills
-  useEffect(() => {
-    if (!tenantId) {
-      setVendorBills([]);
-      return;
-    }
-    const q = query(
-      collection(db, `tenants/${tenantId}/vendorBills`),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as VendorBill));
-      setVendorBills(enrichOverdueStatus(docs, "overdue"));
-    });
-    return () => unsub();
-  }, [tenantId]);
+      const [invoiceRes, vendorBillRes] = await Promise.all([
+        supabase
+          .from("invoices")
+          .select(INVOICE_COLS)
+          .eq("tenant_id", tenantId!)
+          .order("created_at", { ascending: false })
+          .range(0, 99),
+        supabase
+          .from("vendor_bills")
+          .select(VENDOR_BILL_COLS)
+          .eq("tenant_id", tenantId!)
+          .order("created_at", { ascending: false })
+          .range(0, 99),
+      ]);
+
+      if (invoiceRes.error) throw invoiceRes.error;
+      if (vendorBillRes.error) throw vendorBillRes.error;
+
+      const invoiceDocs = (invoiceRes.data || []).map(mapRowToInvoice);
+      const enrichedInvoices = enrichAgingBucket(enrichOverdueStatus(invoiceDocs, "overdue"));
+
+      const vendorDocs = (vendorBillRes.data || []).map(mapRowToVendorBill);
+      const enrichedBills = enrichAgingBucket(enrichOverdueStatus(vendorDocs, "overdue"));
+
+      return { invoices: enrichedInvoices, vendorBills: enrichedBills };
+    },
+    table: "invoices",
+    filter: `tenant_id=eq.${tenantId}`,
+    enabled: !!tenantId,
+    additionalTables: [
+      { table: "vendor_bills", filter: `tenant_id=eq.${tenantId}` },
+    ],
+  });
+
+  const invoices = data?.invoices ?? [];
+  const vendorBills = data?.vendorBills ?? [];
+
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: qk }),
+    [queryClient, qk]
+  );
 
   // Finance stats
   const stats = useMemo<FinanceStats>(() => {
@@ -186,16 +236,18 @@ export function useFinance(tenantId: string | null) {
     }) => {
       if (!tenantId) return;
       await createInvoiceSvc(tenantId, data);
+      invalidate();
     },
-    [tenantId]
+    [tenantId, invalidate]
   );
 
   const updateInvoiceStatus = useCallback(
     async (invoiceId: string, status: Invoice["status"]) => {
       if (!tenantId) return;
       await updateInvoice(tenantId, invoiceId, { status });
+      invalidate();
     },
-    [tenantId]
+    [tenantId, invalidate]
   );
 
   const recordInvoicePayment = useCallback(
@@ -211,8 +263,9 @@ export function useFinance(tenantId: string | null) {
     ) => {
       if (!tenantId) return;
       await addPaymentToInvoice(tenantId, invoiceId, payment);
+      invalidate();
     },
-    [tenantId]
+    [tenantId, invalidate]
   );
 
   const createVendorBill = useCallback(
@@ -225,8 +278,9 @@ export function useFinance(tenantId: string | null) {
     }) => {
       if (!tenantId) return;
       await createVendorBillSvc(tenantId, data);
+      invalidate();
     },
-    [tenantId]
+    [tenantId, invalidate]
   );
 
   const recordVendorPayment = useCallback(
@@ -242,6 +296,29 @@ export function useFinance(tenantId: string | null) {
     ) => {
       if (!tenantId) return;
       await addPaymentToVendorBill(tenantId, billId, payment);
+      invalidate();
+    },
+    [tenantId, invalidate]
+  );
+
+  const sendPaymentReminder = useCallback(
+    async (options?: { type?: "invoice" | "bill"; id?: string }) => {
+      if (!tenantId) return { success: false };
+      try {
+        const res = await fetch("/api/payment-reminders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId,
+            targetType: options?.type,
+            targetId: options?.id,
+          }),
+        });
+        return await res.json();
+      } catch (error) {
+        console.error("Error sending payment reminder:", error);
+        return { success: false };
+      }
     },
     [tenantId]
   );
@@ -257,5 +334,6 @@ export function useFinance(tenantId: string | null) {
     recordInvoicePayment,
     createVendorBill,
     recordVendorPayment,
+    sendPaymentReminder,
   };
 }

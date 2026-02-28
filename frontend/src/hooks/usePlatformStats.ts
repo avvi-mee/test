@@ -1,101 +1,76 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, onSnapshot, Timestamp } from "firebase/firestore";
-import { Tenant, calculateGrowthRate } from "@/lib/firestoreHelpers";
+import { useQuery } from "@tanstack/react-query";
+import { getSupabase } from "@/lib/supabase";
 
 export interface PlatformStats {
-    totalCompanies: number;
-    activeCompanies: number;
-    platformRevenue: number;
-    growthRate: number;
-    companiesLastMonth: number;
-    companiesThisMonth: number;
-    revenueLastMonth: number;
-    loading: boolean;
+  totalCompanies: number;
+  activeCompanies: number;
+  platformRevenue: number;
+  growthRate: number;
+  companiesLastMonth: number;
+  companiesThisMonth: number;
+  revenueLastMonth: number;
+  loading: boolean;
 }
 
+const EMPTY: PlatformStats = {
+  totalCompanies: 0,
+  activeCompanies: 0,
+  platformRevenue: 0,
+  growthRate: 0,
+  companiesLastMonth: 0,
+  companiesThisMonth: 0,
+  revenueLastMonth: 0,
+  loading: true,
+};
+
 export function usePlatformStats(): PlatformStats {
-    const [stats, setStats] = useState<PlatformStats>({
-        totalCompanies: 0,
-        activeCompanies: 0,
+  const { data, isLoading } = useQuery({
+    queryKey: ["platform-stats"],
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("id,status,activated_at,created_at");
+
+      if (error) throw error;
+
+      const companies = data ?? [];
+      const now = new Date();
+      const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const totalCompanies = companies.filter((c: any) => c.status !== "rejected").length;
+      const activeCompanies = companies.filter((c: any) => c.status === "active" && c.activated_at).length;
+
+      const companiesLastMonth = companies.filter((c: any) => {
+        if (!c.created_at) return false;
+        return new Date(c.created_at) < startOfThisMonth;
+      }).length;
+
+      const companiesThisMonth = companies.filter((c: any) => {
+        if (!c.created_at) return false;
+        return new Date(c.created_at) >= startOfThisMonth;
+      }).length;
+
+      const growthRate = companiesLastMonth > 0
+        ? ((totalCompanies - companiesLastMonth) / companiesLastMonth) * 100
+        : totalCompanies > 0 ? 100 : 0;
+
+      return {
+        totalCompanies,
+        activeCompanies,
         platformRevenue: 0,
-        growthRate: 0,
-        companiesLastMonth: 0,
-        companiesThisMonth: 0,
+        growthRate,
+        companiesLastMonth,
+        companiesThisMonth,
         revenueLastMonth: 0,
-        loading: true,
-    });
+        loading: false,
+      };
+    },
+    staleTime: 60 * 1000, // 1 minute (was polling every 60s)
+    refetchInterval: 60 * 1000,
+  });
 
-    useEffect(() => {
-        const tenantsRef = collection(db, "tenants");
-
-        // Listen to all tenants (companies) in real-time
-        const unsubscribe = onSnapshot(tenantsRef, (snapshot) => {
-            const companies: Tenant[] = [];
-
-            snapshot.forEach((doc) => {
-                companies.push({ id: doc.id, ...doc.data() } as Tenant);
-            });
-
-            // Calculate total companies (all statuses except rejected)
-            const totalCompanies = companies.filter(
-                (c) => c.status !== "rejected"
-            ).length;
-
-            // Calculate active companies (companies with at least one estimate)
-            const activeCompanies = companies.filter(
-                (c) => c.status === "active" && c.activatedAt
-            ).length;
-
-            // Calculate platform revenue (sum of all active company revenues)
-            const platformRevenue = companies
-                .filter((c) => c.status === "active")
-                .reduce((sum, c) => sum + (c.revenue?.thisMonth || 0), 0);
-
-            // Calculate last month revenue
-            const revenueLastMonth = companies
-                .filter((c) => c.status === "active")
-                .reduce((sum, c) => sum + (c.revenue?.lastMonth || 0), 0);
-
-            // Calculate companies from last month (for comparison)
-            const now = new Date();
-            const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-
-            const companiesLastMonth = companies.filter((c) => {
-                if (!c.createdAt?.toDate) return false;
-                const createdDate = c.createdAt.toDate();
-                return createdDate < startOfThisMonth;
-            }).length;
-
-            // Calculate companies registered this month
-            const companiesThisMonth = companies.filter((c) => {
-                if (!c.createdAt?.toDate) return false;
-                const createdDate = c.createdAt.toDate();
-                return createdDate >= startOfThisMonth;
-            }).length;
-
-            // Calculate growth rate (company onboarding growth)
-            const growthRate = companiesLastMonth > 0
-                ? ((totalCompanies - companiesLastMonth) / companiesLastMonth) * 100
-                : totalCompanies > 0 ? 100 : 0;
-
-            setStats({
-                totalCompanies,
-                activeCompanies,
-                platformRevenue,
-                growthRate,
-                companiesLastMonth,
-                companiesThisMonth,
-                revenueLastMonth,
-                loading: false,
-            });
-        });
-
-        return () => unsubscribe();
-    }, []);
-
-    return stats;
+  return data ?? { ...EMPTY, loading: isLoading };
 }

@@ -1,76 +1,96 @@
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+"use client";
+
+import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getSupabase } from "@/lib/supabase";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
 export interface Project {
-    id: string;
-    title: string;
-    description: string;
-    images: string[]; // URLs
-    completionDate: string;
-    location: string;
-    category: string;
-    status: "active" | "hidden";
-    tenantId: string;
-    createdAt?: any;
+  id: string;
+  title: string;
+  description: string;
+  images: string[];
+  completionDate: string;
+  location: string;
+  category: string;
+  status: "active" | "hidden";
+  tenantId: string;
+  createdAt?: any;
+}
+
+function mapRow(row: any): Project {
+  return {
+    id: row.id,
+    title: row.title ?? "",
+    description: row.description ?? "",
+    images: row.images ?? (row.image_url ? [row.image_url] : []),
+    completionDate: row.completion_date ?? "",
+    location: row.location ?? "",
+    category: row.category ?? "",
+    status: row.status ?? "active",
+    tenantId: row.tenant_id,
+    createdAt: row.created_at,
+  };
 }
 
 export function usePortfolio(tenantId: string | null) {
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const qk = ["portfolio", tenantId] as const;
 
-    useEffect(() => {
-        if (!tenantId) {
-            setLoading(false);
-            return;
-        }
+  const { data: projects = [], isLoading: loading } = useRealtimeQuery<Project[]>({
+    queryKey: qk,
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("portfolio_projects")
+        .select("*")
+        .eq("tenant_id", tenantId!);
+      if (error) throw error;
+      return (data ?? []).map(mapRow);
+    },
+    table: "portfolio_projects",
+    filter: `tenant_id=eq.${tenantId}`,
+    enabled: !!tenantId,
+  });
 
-        const projectsRef = collection(db, "portfolio");
-        const q = query(projectsRef, where("tenantId", "==", tenantId));
+  const invalidate = useCallback(() => queryClient.invalidateQueries({ queryKey: qk }), [queryClient, qk]);
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const projectsData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Project[];
-            setProjects(projectsData);
-            setLoading(false);
-        });
+  const updateProjectStatus = useCallback(async (projectId: string, status: "active" | "hidden") => {
+    const supabase = getSupabase();
+    const { error } = await supabase.from("portfolio_projects").update({ status }).eq("id", projectId);
+    if (error) throw error;
+    invalidate();
+  }, [invalidate]);
 
-        return () => unsubscribe();
-    }, [tenantId]);
+  const addProject = useCallback(async (projectData: Omit<Project, "id" | "tenantId" | "createdAt" | "status">) => {
+    if (!tenantId) throw new Error("No tenant ID");
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("portfolio_projects")
+      .insert({
+        tenant_id: tenantId,
+        title: projectData.title,
+        description: projectData.description,
+        images: projectData.images,
+        image_url: projectData.images?.[0] ?? null,
+        completion_date: projectData.completionDate,
+        location: projectData.location,
+        category: projectData.category,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    invalidate();
+    return data.id;
+  }, [tenantId, invalidate]);
 
-    const updateProjectStatus = async (projectId: string, status: "active" | "hidden") => {
-        try {
-            const projectRef = doc(db, "portfolio", projectId);
-            await updateDoc(projectRef, { status });
-        } catch (error) {
-            console.error("Error updating project status:", error);
-            throw error;
-        }
-    };
+  const deleteProject = useCallback(async (projectId: string) => {
+    const supabase = getSupabase();
+    const { error } = await supabase.from("portfolio_projects").delete().eq("id", projectId);
+    if (error) throw error;
+    invalidate();
+  }, [invalidate]);
 
-    const addProject = async (projectData: Omit<Project, "id" | "tenantId" | "createdAt" | "status">) => {
-        if (!tenantId) throw new Error("No tenant ID");
-
-        const projectsRef = collection(db, "portfolio");
-        const docRef = await addDoc(projectsRef, {
-            ...projectData,
-            tenantId,
-            status: "active",
-            createdAt: serverTimestamp()
-        });
-        return docRef.id;
-    };
-
-    const deleteProject = async (projectId: string) => {
-        try {
-            await deleteDoc(doc(db, "portfolio", projectId));
-        } catch (error) {
-            console.error("Error deleting project:", error);
-            throw error;
-        }
-    };
-
-    return { projects, loading, updateProjectStatus, addProject, deleteProject };
+  return { projects, loading, updateProjectStatus, addProject, deleteProject };
 }

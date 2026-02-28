@@ -1,50 +1,54 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { getSupabase } from "@/lib/supabase";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
 export interface Estimate {
-    id: string;
-    customerName: string;
-    phoneNumber: string;
-    email: string;
-    type: string;
-    amount: number;
-    status: "pending" | "approved" | "contacted" | "rejected";
-    createdAt: any;
-    pdfLink?: string;
-    tenantId: string;
+  id: string;
+  customerName: string;
+  phoneNumber: string;
+  email: string;
+  type: string;
+  amount: number;
+  status: "pending" | "approved" | "contacted" | "rejected";
+  createdAt: any;
+  pdfLink?: string;
+  tenantId: string;
+}
+
+function mapRow(row: any): Estimate {
+  return {
+    id: row.id,
+    customerName: row.customer_info?.name ?? row.customer_name ?? "",
+    phoneNumber: row.customer_info?.phone ?? row.phone_number ?? "",
+    email: row.customer_info?.email ?? row.email ?? "",
+    type: row.type ?? row.segment ?? "",
+    amount: row.total_amount ?? row.amount ?? 0,
+    status: row.status || "pending",
+    createdAt: row.created_at,
+    pdfLink: row.pdf_url ?? row.pdf_link ?? undefined,
+    tenantId: row.tenant_id,
+  };
 }
 
 export function useEstimates(tenantId: string | null) {
-    const [estimates, setEstimates] = useState<Estimate[]>([]);
-    const [loading, setLoading] = useState(true);
+  const { data: estimates = [], isLoading: loading } = useRealtimeQuery<Estimate[]>({
+    queryKey: ["estimates", tenantId],
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("estimates")
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .order("created_at", { ascending: false });
 
-    useEffect(() => {
-        if (!tenantId) {
-            setLoading(false);
-            return;
-        }
+      if (error) throw error;
+      return (data ?? []).map(mapRow);
+    },
+    table: "estimates",
+    filter: `tenant_id=eq.${tenantId}`,
+    enabled: !!tenantId,
+  });
 
-        const estimatesRef = collection(db, "estimates");
-        const q = query(
-            estimatesRef,
-            where("tenantId", "==", tenantId),
-            orderBy("createdAt", "desc")
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const estimatesData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Estimate[];
-            setEstimates(estimatesData);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [tenantId]);
-
-    return { estimates, loading };
+  return { estimates, loading };
 }

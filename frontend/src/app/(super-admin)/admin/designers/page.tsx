@@ -15,12 +15,16 @@ interface Company {
     id: string;
     name: string;
     email: string;
-    businessName: string;
-    storeId: string;
+    businessName?: string;
+    storeId?: string;
+    slug?: string;
     status: string;
-    revenue?: {
-        thisMonth?: number;
-    };
+    phone?: string;
+    createdAt?: string;
+    approvedAt?: string;
+    subscription?: string;
+    settings?: Record<string, any>;
+    ownerId?: string;
 }
 
 export default function CompaniesPage() {
@@ -79,7 +83,7 @@ export default function CompaniesPage() {
         setEditingCompany(company);
         setEditFormData({
             name: company.name,
-            businessName: company.businessName,
+            businessName: company.name,
             status: company.status,
         });
         setEditDialogOpen(true);
@@ -92,8 +96,7 @@ export default function CompaniesPage() {
         setActionLoading(editingCompany.id);
         try {
             await updateDesigner(editingCompany.id, {
-                name: editFormData.name,
-                businessName: editFormData.businessName,
+                name: editFormData.businessName,
                 status: editFormData.status as "pending" | "active" | "inactive" | "rejected",
             });
             setEditDialogOpen(false);
@@ -200,17 +203,17 @@ export default function CompaniesPage() {
                                             <td className="p-4 text-muted-foreground">{company.email}</td>
                                             <td className="p-4">
                                                 <a
-                                                    href={`/${company.storeId}`}
+                                                    href={`/${company.slug}`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="text-primary hover:underline"
                                                 >
-                                                    {company.businessName}
+                                                    {company.name}
                                                 </a>
                                             </td>
                                             <td className="p-4">{getStatusBadge(company.status)}</td>
-                                            <td className="p-4 font-medium">
-                                                ₹{company.revenue?.thisMonth?.toLocaleString('en-IN') || 0}
+                                            <td className="p-4 font-medium text-muted-foreground">
+                                                -
                                             </td>
                                             <td className="p-4">
                                                 <div className="flex items-center justify-end gap-2">
@@ -242,7 +245,7 @@ export default function CompaniesPage() {
                                                             <Button
                                                                 variant="outline"
                                                                 size="sm"
-                                                                onClick={() => handleEditClick(company)}
+                                                                onClick={() => handleEditClick(company as any as Company)}
                                                                 disabled={actionLoading === company.id}
                                                             >
                                                                 <Edit className="h-4 w-4 mr-1" />

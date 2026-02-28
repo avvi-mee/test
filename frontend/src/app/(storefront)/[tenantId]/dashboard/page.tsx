@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { ArrowLeft, Package, Clock, CheckCircle, XCircle, Download, Calendar, Loader2 } from "lucide-react";
+import { ArrowLeft, Package, Clock, CheckCircle, XCircle, Download, Calendar, Loader2, Activity } from "lucide-react";
 import { usePublicWebsiteConfig } from "@/hooks/useWebsiteConfig";
 import { useStorefrontOrders } from "@/hooks/useStorefrontOrders";
 import { useRouter } from "next/navigation";
@@ -29,8 +29,6 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
         if (storedUser) {
             setUser(JSON.parse(storedUser));
         } else {
-            // If not logged in, redirect home or show auth
-            // Ideally redirect to home and open auth, but for now just redirect
             router.push(`/${tenantId}`);
         }
     }, [tenantId, router]);
@@ -40,6 +38,9 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
         userEmail: user?.email || null
     });
 
+    // Orders that have a projectSummary (synced from project execution engine)
+    const ordersWithProject = realOrders.filter((o: any) => o.projectSummary);
+
     const getStatusColor = (status: string) => {
         switch (status?.toLowerCase()) {
             case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
@@ -48,6 +49,8 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
             case 'rejected': return 'bg-red-100 text-red-800 border-red-200';
             case 'running': return 'bg-blue-100 text-blue-800 border-blue-200';
             case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
+            case 'planning': return 'bg-gray-100 text-gray-800 border-gray-200';
+            case 'on_hold': return 'bg-orange-100 text-orange-800 border-orange-200';
             default: return 'bg-gray-100 text-gray-800 border-gray-200';
         }
     };
@@ -108,6 +111,24 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
         }
     };
 
+    const getHealthColor = (health: string) => {
+        switch (health) {
+            case 'on_track': return 'bg-green-100 text-green-800';
+            case 'at_risk': return 'bg-yellow-100 text-yellow-800';
+            case 'delayed': return 'bg-red-100 text-red-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    };
+
+    const getHealthLabel = (health: string) => {
+        switch (health) {
+            case 'on_track': return 'On Track';
+            case 'at_risk': return 'At Risk';
+            case 'delayed': return 'Delayed';
+            default: return health;
+        }
+    };
+
     return (
         <div className="container mx-auto px-4 py-8 max-w-6xl">
             <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -148,7 +169,109 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
                 </div>
 
                 {/* Main Content */}
-                <div className="md:col-span-3">
+                <div className="md:col-span-3 space-y-6">
+                    {/* Project Progress Section */}
+                    {ordersWithProject.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Activity className="h-5 w-5 text-blue-600" />
+                                    Project Progress
+                                </CardTitle>
+                                <CardDescription>Track the progress of your active projects.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                                {ordersWithProject.map((order: any) => {
+                                    const ps = order.projectSummary;
+                                    return (
+                                        <div key={order.id} className="border rounded-lg p-4 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h3 className="font-semibold text-gray-900">
+                                                        {order.plan ? `${order.plan} Plan` : (order.segment || "Project")}
+                                                    </h3>
+                                                    <p className="text-xs text-gray-500">Order #{order.id}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Badge className={getStatusColor(ps.status || 'planning')}>
+                                                        {(ps.status || 'planning').replace(/_/g, ' ')}
+                                                    </Badge>
+                                                    <Badge className={getHealthColor(ps.healthStatus || 'on_track')}>
+                                                        {getHealthLabel(ps.healthStatus || 'on_track')}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+
+                                            {/* Overall progress bar */}
+                                            <div>
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <span className="text-sm text-gray-600">Overall Progress</span>
+                                                    <span className="text-sm font-bold text-gray-900">{ps.projectProgress || 0}%</span>
+                                                </div>
+                                                <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div
+                                                        className="h-full bg-gradient-to-r from-blue-500 to-green-500 rounded-full transition-all"
+                                                        style={{ width: `${ps.projectProgress || 0}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Phase milestones */}
+                                            {ps.phases && ps.phases.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Phases</p>
+                                                    <div className="space-y-2">
+                                                        {ps.phases
+                                                            .sort((a: any, b: any) => a.order - b.order)
+                                                            .map((phase: any, idx: number) => (
+                                                                <div key={idx} className="flex items-center gap-3">
+                                                                    {/* Numbered circle */}
+                                                                    <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                                                        phase.status === 'completed'
+                                                                            ? 'bg-green-500 text-white'
+                                                                            : phase.status === 'in_progress'
+                                                                            ? 'bg-blue-500 text-white'
+                                                                            : 'bg-gray-200 text-gray-500'
+                                                                    }`}>
+                                                                        {phase.status === 'completed' ? (
+                                                                            <CheckCircle className="h-4 w-4" />
+                                                                        ) : (
+                                                                            phase.order
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className={`text-sm ${
+                                                                                phase.status === 'completed' ? 'text-gray-400' : 'text-gray-900'
+                                                                            }`}>
+                                                                                {phase.name}
+                                                                            </span>
+                                                                            <span className="text-xs text-gray-500">{phase.progressPercentage || 0}%</span>
+                                                                        </div>
+                                                                        <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden mt-1">
+                                                                            <div
+                                                                                className={`h-full rounded-full transition-all ${
+                                                                                    phase.status === 'completed'
+                                                                                        ? 'bg-green-500'
+                                                                                        : 'bg-blue-500'
+                                                                                }`}
+                                                                                style={{ width: `${phase.progressPercentage || 0}%` }}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Order History */}
                     <Card>
                         <CardHeader>
                             <CardTitle>Order History</CardTitle>
@@ -172,10 +295,10 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
                                                             {order.status || 'pending'}
                                                         </Badge>
                                                     </div>
-                                                    <p className="text-sm text-gray-500">Order ID: {order.id} • {formatDate(order.createdAt)}</p>
+                                                    <p className="text-sm text-gray-500">Order ID: {order.id} &bull; {formatDate(order.createdAt)}</p>
                                                     <p className="text-sm text-gray-600 mt-1 max-w-md">
                                                         {order.carpetArea ? `${order.carpetArea} sqft` : ''}
-                                                        {order.configuration?.kitchen ? ' • Kitchen' : ''}
+                                                        {order.segment ? ` • ${order.segment}` : ''}
                                                     </p>
                                                 </div>
                                                 <div className="text-right sm:text-right flex flex-col items-end gap-2">
@@ -274,7 +397,7 @@ export default function UserDashboard({ params }: { params: Promise<{ tenantId: 
                                         </p>
                                         {event.note && (
                                             <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded mt-1 border border-gray-100 italic">
-                                                "{event.note}"
+                                                &quot;{event.note}&quot;
                                             </p>
                                         )}
                                         {event.updatedBy && (

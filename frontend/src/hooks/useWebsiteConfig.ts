@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db, storage } from "@/lib/firebase";
-import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, orderBy } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useState, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getSupabase } from "@/lib/supabase";
+import { useRealtimeQuery } from "@/lib/supabaseQuery";
 
 export interface WebsiteConfig {
     brandName: string;
@@ -41,39 +41,66 @@ const defaultConfig: WebsiteConfig = {
     backgroundColor: "#ffffff",
 };
 
+// Helper: map DB row (tenant_page_configs content) to WebsiteConfig
+function rowToConfig(content: any): WebsiteConfig {
+    if (!content) return defaultConfig;
+    return {
+        ...defaultConfig,
+        brandName: content.brandName ?? content.brand_name ?? defaultConfig.brandName,
+        headerTitle: content.headerTitle ?? content.header_title ?? defaultConfig.headerTitle,
+        phone: content.phone ?? defaultConfig.phone,
+        email: content.email ?? defaultConfig.email,
+        primaryColor: content.primaryColor ?? content.primary_color ?? defaultConfig.primaryColor,
+        secondaryColor: content.secondaryColor ?? content.secondary_color ?? defaultConfig.secondaryColor,
+        logoUrl: content.logoUrl ?? content.logo_url ?? defaultConfig.logoUrl,
+        faviconUrl: content.faviconUrl ?? content.favicon_url ?? defaultConfig.faviconUrl,
+        heroImageUrl: content.heroImageUrl ?? content.hero_image_url ?? defaultConfig.heroImageUrl,
+        heroHeading: content.heroHeading ?? content.hero_heading ?? defaultConfig.heroHeading,
+        heroSubheading: content.heroSubheading ?? content.hero_subheading ?? defaultConfig.heroSubheading,
+        footerText: content.footerText ?? content.footer_text ?? defaultConfig.footerText,
+        accentColor: content.accentColor ?? content.accent_color ?? undefined,
+        buttonRadius: content.buttonRadius ?? content.button_radius ?? undefined,
+        backgroundColor: content.backgroundColor ?? content.background_color ?? defaultConfig.backgroundColor,
+        fontStyle: content.fontStyle ?? content.font_style ?? undefined,
+        updatedAt: content.updatedAt ?? content.updated_at ?? undefined,
+    };
+}
+
 export function useWebsiteConfig(tenantId: string | null) {
-    const [config, setConfig] = useState<WebsiteConfig>(defaultConfig);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
+    const qk = ["website-config", tenantId] as const;
     const [saving, setSaving] = useState(false);
 
-    // Real-time listener
-    useEffect(() => {
-        if (!tenantId || !db) {
-            if (!db) console.warn("Firestore not initialized. Skipping config listener.");
-            setLoading(false);
-            return;
-        }
+    const { data: config = defaultConfig, isLoading: loading } = useRealtimeQuery<WebsiteConfig>({
+        queryKey: qk,
+        queryFn: async () => {
+            const supabase = getSupabase();
+            const { data, error } = await supabase
+                .from("tenant_page_configs")
+                .select("content")
+                .eq("tenant_id", tenantId!)
+                .eq("page_type", "website_config")
+                .maybeSingle();
 
-        const configRef = doc(db, "tenants", tenantId, "websiteConfig", "settings");
-
-        const unsubscribe = onSnapshot(
-            configRef,
-            (snapshot) => {
-                if (snapshot.exists()) {
-                    setConfig({ ...defaultConfig, ...snapshot.data() } as WebsiteConfig);
-                } else {
-                    setConfig(defaultConfig);
-                }
-                setLoading(false);
-            },
-            (error) => {
+            if (error) {
                 console.error("Error fetching website config:", error);
-                setLoading(false);
+                return defaultConfig;
             }
-        );
 
-        return () => unsubscribe();
-    }, [tenantId]);
+            if (data && data.content) {
+                return rowToConfig(data.content);
+            }
+            return defaultConfig;
+        },
+        table: "tenant_page_configs",
+        filter: `tenant_id=eq.${tenantId}`,
+        enabled: !!tenantId,
+    });
+
+    const invalidate = useCallback(
+        () => queryClient.invalidateQueries({ queryKey: qk }),
+        [queryClient, qk]
+    );
 
     // Save config
     const saveConfig = async (updates: Partial<WebsiteConfig>) => {
@@ -81,12 +108,22 @@ export function useWebsiteConfig(tenantId: string | null) {
 
         setSaving(true);
         try {
-            const configRef = doc(db, "tenants", tenantId, "websiteConfig", "settings");
-            await setDoc(configRef, {
-                ...config,
-                ...updates,
-                updatedAt: serverTimestamp(),
-            }, { merge: true });
+            const supabase = getSupabase();
+            const mergedContent = { ...config, ...updates };
+
+            const { error } = await supabase
+                .from("tenant_page_configs")
+                .upsert(
+                    {
+                        tenant_id: tenantId,
+                        page_type: "website_config",
+                        content: mergedContent,
+                    },
+                    { onConflict: "tenant_id,page_type" }
+                );
+
+            if (error) throw error;
+            invalidate();
             return true;
         } catch (error) {
             console.error("Error saving website config:", error);
@@ -96,15 +133,25 @@ export function useWebsiteConfig(tenantId: string | null) {
         }
     };
 
-    // Upload image
+    // Upload image (uses Supabase Storage)
     const uploadImage = async (file: File, type: "logo" | "hero"): Promise<string | null> => {
         if (!tenantId) return null;
 
         try {
+            const supabase = getSupabase();
             const path = `tenants/${tenantId}/website/${type}_${Date.now()}`;
-            const storageRef = ref(storage, path);
-            await uploadBytes(storageRef, file);
-            const url = await getDownloadURL(storageRef);
+
+            const { error: uploadError } = await supabase.storage
+                .from("tenant-assets")
+                .upload(path, file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            const { data: urlData } = supabase.storage
+                .from("tenant-assets")
+                .getPublicUrl(path);
+
+            const url = urlData.publicUrl;
 
             // Auto-save URL
             const field = type === "logo" ? "logoUrl" : "heroImageUrl";
@@ -128,138 +175,134 @@ export function useWebsiteConfig(tenantId: string | null) {
 
 // Public hook - for storefront (no auth required)
 export function usePublicWebsiteConfig(storeSlug: string) {
-    const [config, setConfig] = useState<WebsiteConfig | null>(null);
     const [tenantId, setTenantId] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [resolving, setResolving] = useState(true);
 
     // Resolve slug to tenant ID
     useEffect(() => {
         if (!storeSlug) {
-            setLoading(false);
+            setResolving(false);
             return;
         }
 
-        let resolved = false;
+        let cancelled = false;
 
-        // Set a timeout to prevent indefinite loading
         const timeoutId = setTimeout(() => {
-            if (!resolved) {
+            if (!cancelled) {
                 console.warn(`Timeout resolving tenant: ${storeSlug}. Using defaults.`);
-                setConfig(defaultConfig);
-                setLoading(false);
+                setResolving(false);
             }
-        }, 3000); // 3 second timeout
+        }, 3000);
 
         const resolveTenant = async () => {
             try {
-                const { getTenantByStoreId } = await import("@/lib/firestoreHelpers");
-                if (!db) {
-                    console.warn("Firestore not initialized. Cannot resolve tenant.");
-                    setConfig(defaultConfig);
-                    setLoading(false);
-                    clearTimeout(timeoutId);
-                    return;
-                }
-                const tenant = await getTenantByStoreId(storeSlug.toLowerCase()) || await getTenantByStoreId(storeSlug);
-                resolved = true;
+                const { getTenantBySlug } = await import("@/lib/firestoreHelpers");
+                const tenant = await getTenantBySlug(storeSlug.toLowerCase()) || await getTenantBySlug(storeSlug);
+                if (cancelled) return;
                 clearTimeout(timeoutId);
                 if (tenant) {
                     setTenantId(tenant.id);
                 } else {
                     console.warn(`Tenant not found: ${storeSlug}. Using defaults.`);
-                    setConfig(defaultConfig);
-                    setLoading(false);
                 }
+                setResolving(false);
             } catch (error) {
                 console.error("Error resolving tenant:", error);
-                resolved = true;
-                clearTimeout(timeoutId);
-                setConfig(defaultConfig);
-                setLoading(false);
+                if (!cancelled) {
+                    clearTimeout(timeoutId);
+                    setResolving(false);
+                }
             }
         };
 
         resolveTenant();
 
-        return () => clearTimeout(timeoutId);
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+        };
     }, [storeSlug]);
 
-    // Real-time config listener (Merged from brand and theme)
-    useEffect(() => {
-        if (!tenantId || !db) {
-            if (!db && tenantId) console.warn("Firestore not initialized. Skipping public config listener.");
-            return;
-        }
+    const qk = ["public-website-config", tenantId] as const;
 
-        let brandData = {};
-        let themeData = {};
-        let dataLoaded = false;
+    const { data: config = null, isLoading: queryLoading } = useRealtimeQuery<WebsiteConfig>({
+        queryKey: qk,
+        queryFn: async () => {
+            const supabase = getSupabase();
 
-        const brandRef = doc(db, "tenants", tenantId, "brand", "config");
-        const themeRef = doc(db, "tenants", tenantId, "theme", "config");
+            // Fetch brand and theme configs in parallel
+            const [brandRes, themeRes, configRes] = await Promise.all([
+                supabase
+                    .from("tenant_page_configs")
+                    .select("content")
+                    .eq("tenant_id", tenantId!)
+                    .eq("page_type", "brand")
+                    .maybeSingle(),
+                supabase
+                    .from("tenant_page_configs")
+                    .select("content")
+                    .eq("tenant_id", tenantId!)
+                    .eq("page_type", "theme")
+                    .maybeSingle(),
+                supabase
+                    .from("tenant_page_configs")
+                    .select("content")
+                    .eq("tenant_id", tenantId!)
+                    .eq("page_type", "website_config")
+                    .maybeSingle(),
+            ]);
 
-        const updateConfig = () => {
-            dataLoaded = true;
-            clearTimeout(timeoutId);
-            setConfig({
+            const brandData = brandRes.data?.content || {};
+            const themeData = themeRes.data?.content || {};
+            const configData = configRes.data?.content || {};
+
+            return {
                 ...defaultConfig,
                 ...brandData,
                 ...themeData,
-            } as WebsiteConfig);
-            setLoading(false);
-        };
+                ...configData,
+            } as WebsiteConfig;
+        },
+        table: "tenant_page_configs",
+        filter: `tenant_id=eq.${tenantId}`,
+        enabled: !!tenantId,
+    });
 
-        const timeoutId = setTimeout(() => {
-            if (!dataLoaded) {
-                console.warn(`Timeout fetching config for tenant: ${tenantId}. Using defaults.`);
-                setConfig(defaultConfig);
-                setLoading(false);
-            }
-        }, 3000);
+    const loading = resolving || queryLoading;
 
-        const unsubBrand = onSnapshot(brandRef, (snapshot) => {
-            if (snapshot.exists()) {
-                brandData = snapshot.data();
-            }
-            updateConfig();
-        });
-
-        const unsubTheme = onSnapshot(themeRef, (snapshot) => {
-            if (snapshot.exists()) {
-                themeData = snapshot.data();
-            }
-            updateConfig();
-        });
-
-        return () => {
-            unsubBrand();
-            unsubTheme();
-            clearTimeout(timeoutId);
-        };
-    }, [tenantId]);
-
-    return { config, tenantId, loading };
+    return { config: config ?? defaultConfig, tenantId, loading };
 }
 
 // Public hook - for storefront navigation (reads custom pages)
 export function usePublicCustomPages(tenantId: string | null) {
-    const [customPages, setCustomPages] = useState<{ title: string; slug: string; order: number }[]>([]);
+    const qk = ["public-custom-pages", tenantId] as const;
 
-    useEffect(() => {
-        if (!tenantId || !db) return;
+    const { data: customPages = [] } = useRealtimeQuery<{ title: string; slug: string; order: number }[]>({
+        queryKey: qk,
+        queryFn: async () => {
+            const supabase = getSupabase();
+            const { data, error } = await supabase
+                .from("custom_pages")
+                .select("title, slug, sort_order, is_published")
+                .eq("tenant_id", tenantId!)
+                .eq("is_published", true)
+                .order("sort_order", { ascending: true });
 
-        const pagesRef = collection(db, "tenants", tenantId, "pages", "custom", "items");
-        const q = query(pagesRef, orderBy("order", "asc"));
+            if (error) {
+                console.error("Error fetching custom pages:", error);
+                return [];
+            }
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs
-                .map((d) => d.data() as { title: string; slug: string; order: number; isPublished?: boolean; showInNav?: boolean })
-                .filter((p) => p.isPublished && p.showInNav);
-            setCustomPages(data);
-        });
-
-        return () => unsubscribe();
-    }, [tenantId]);
+            return (data ?? []).map((row: any) => ({
+                title: row.title,
+                slug: row.slug,
+                order: row.sort_order ?? 0,
+            }));
+        },
+        table: "custom_pages",
+        filter: `tenant_id=eq.${tenantId}`,
+        enabled: !!tenantId,
+    });
 
     return { customPages };
 }
