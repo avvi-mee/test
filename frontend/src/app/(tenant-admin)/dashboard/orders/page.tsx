@@ -419,7 +419,7 @@ export default function SalesPipelinePage() {
 
       {/* Lead Details Modal */}
       <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-        <DialogContent className="max-w-4xl h-[88vh] overflow-hidden flex flex-col p-0 gap-0 rounded-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 rounded-2xl shadow-2xl">
           <DialogTitle className="sr-only">
             {selectedLead ? `Lead: ${selectedLead.name}` : "Lead Details"}
           </DialogTitle>
@@ -427,25 +427,23 @@ export default function SalesPipelinePage() {
 
           {selectedLead && (
             <>
-              {/* ── Header ── */}
-              <div className="shrink-0 bg-white px-7 pt-6 pb-5 border-b border-gray-100">
-                <div className="flex items-start justify-between gap-4">
+              {/* ── Sticky Header ── */}
+              <div className="shrink-0 bg-white px-6 pt-5 pb-5 border-b border-gray-100">
+                {/* Top row: avatar + name + close */}
+                <div className="flex items-start justify-between gap-3 mb-4">
                   <div className="flex items-center gap-4 min-w-0">
-                    <div className="h-12 w-12 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shrink-0">
+                    <div className="h-14 w-14 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-black text-2xl shrink-0">
                       {selectedLead.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <h2 className="text-xl font-bold text-gray-900 leading-tight truncate">{selectedLead.name}</h2>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <h2 className="text-xl font-bold text-gray-900 leading-tight">{selectedLead.name}</h2>
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                         {selectedLead.email && (
-                          <span className="text-sm text-gray-500 truncate">{selectedLead.email}</span>
-                        )}
-                        {selectedLead.email && selectedLead.phone && (
-                          <span className="text-gray-300 text-sm">·</span>
+                          <span className="text-sm text-gray-500 truncate max-w-[200px]">{selectedLead.email}</span>
                         )}
                         {selectedLead.phone && (
-                          <span className="text-sm text-gray-500 flex items-center gap-1">
-                            <Phone className="h-3 w-3 text-gray-400" />
+                          <span className="text-sm text-gray-500 flex items-center gap-1 shrink-0">
+                            <Phone className="h-3.5 w-3.5 text-gray-400" />
                             {selectedLead.phone}
                           </span>
                         )}
@@ -453,55 +451,51 @@ export default function SalesPipelinePage() {
                     </div>
                   </div>
                   <DialogClose asChild>
-                    <button className="rounded-full p-2 hover:bg-gray-100 transition-colors shrink-0 mt-0.5">
-                      <X className="h-4.5 w-4.5 text-gray-500" />
+                    <button className="rounded-full p-1.5 hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600 shrink-0 mt-0.5">
+                      <X className="h-4 w-4" />
                     </button>
                   </DialogClose>
                 </div>
 
-                {/* Badges + Action row */}
-                <div className="flex items-center justify-between mt-4 gap-3 flex-wrap">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className={cn("text-xs border-none px-2.5 py-1 font-medium", STAGE_COLORS[selectedLead.stage])}>
-                      {STAGE_LABELS[selectedLead.stage]}
-                    </Badge>
-                    <Badge className={cn("text-xs capitalize border-none px-2.5 py-1 font-medium", TEMP_COLORS[selectedLead.temperature])}>
-                      {selectedLead.temperature}
-                    </Badge>
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">
-                      Score {selectedLead.score}
+                {/* Badges row */}
+                <div className="flex items-center gap-2 flex-wrap mb-4">
+                  <Badge className={cn("text-xs border-none px-2.5 py-1 font-semibold rounded-full", STAGE_COLORS[selectedLead.stage])}>
+                    {STAGE_LABELS[selectedLead.stage]}
+                  </Badge>
+                  <Badge className={cn("text-xs capitalize border-none px-2.5 py-1 font-semibold rounded-full", TEMP_COLORS[selectedLead.temperature])}>
+                    {selectedLead.temperature}
+                  </Badge>
+                  <span className="text-xs text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full font-semibold">
+                    Score {selectedLead.score}
+                  </span>
+                  {selectedLead.source && (
+                    <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full capitalize">
+                      {selectedLead.source.replace(/_/g, " ")}
                     </span>
-                    {selectedLead.city && (
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
-                        {selectedLead.city}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {selectedLead.stage !== "won" && selectedLead.stage !== "lost" && (
-                      <>
-                        <Button
-                          size="sm"
-                          className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white gap-1.5 px-3 rounded-lg"
-                          onClick={() => {
-                            handleStageChange(selectedLead.id, "won");
-                            setSelectedLead({ ...selectedLead, stage: "won" });
-                          }}
-                        >
-                          <CheckCircle className="h-3.5 w-3.5" />
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 gap-1.5 px-3 rounded-lg"
-                          onClick={() => handleStageChange(selectedLead.id, "lost")}
-                        >
-                          <XCircle className="h-3.5 w-3.5" />
-                          Reject
-                        </Button>
-                      </>
-                    )}
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                {selectedLead.stage !== "won" && selectedLead.stage !== "lost" ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="h-9 text-sm bg-green-600 hover:bg-green-700 text-white gap-2 px-4 rounded-lg"
+                      onClick={() => {
+                        handleStageChange(selectedLead.id, "won");
+                        setSelectedLead({ ...selectedLead, stage: "won" });
+                      }}
+                    >
+                      <CheckCircle className="h-4 w-4" /> Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9 text-sm border-red-200 text-red-600 hover:bg-red-50 gap-2 px-4 rounded-lg"
+                      onClick={() => handleStageChange(selectedLead.id, "lost")}
+                    >
+                      <XCircle className="h-4 w-4" /> Reject
+                    </Button>
                     <Select
                       value={selectedLead.stage}
                       onValueChange={(val) => {
@@ -509,9 +503,9 @@ export default function SalesPipelinePage() {
                         if (val !== "lost") setSelectedLead({ ...selectedLead, stage: val as Lead["stage"] });
                       }}
                     >
-                      <SelectTrigger className="h-8 w-[148px] text-xs rounded-lg">
+                      <SelectTrigger className="h-9 text-sm rounded-lg w-40 ml-auto">
                         <div className="flex items-center gap-1.5">
-                          <ChevronDown className="h-3 w-3 text-gray-400" />
+                          <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
                           <span>Move Stage</span>
                         </div>
                       </SelectTrigger>
@@ -522,117 +516,120 @@ export default function SalesPipelinePage() {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
+                ) : (
+                  <div className={cn(
+                    "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
+                    selectedLead.stage === "won" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                  )}>
+                    {selectedLead.stage === "won" ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                    {selectedLead.stage === "won" ? "Lead Won" : "Lead Lost"}
+                  </div>
+                )}
               </div>
 
-              {/* ── Two-column body ── */}
-              <div className="flex-1 min-h-0 flex overflow-hidden">
+              {/* ── Scrollable Body ── */}
+              <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50/50 px-6 py-5 space-y-4">
 
-                {/* LEFT: Lead info + budget + notes */}
-                <div className="flex-[3] overflow-y-auto border-r border-gray-100 px-7 py-6 space-y-6">
-
-                  {/* Lead Info */}
-                  <section>
-                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                {/* Lead Info Card */}
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-gray-50 bg-gray-50/70">
+                    <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
                       <User className="h-3.5 w-3.5" /> Lead Information
                     </p>
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-                      <div>
-                        <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium mb-1">Name</p>
-                        <p className="text-sm font-semibold text-gray-900">{selectedLead.name}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium mb-1">Phone</p>
-                        <p className="text-sm font-semibold text-gray-900">{selectedLead.phone || "—"}</p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium mb-1">Email</p>
-                        <p className="text-sm font-semibold text-gray-900">{selectedLead.email || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium mb-1">City</p>
-                        <p className="text-sm font-semibold text-gray-900">{selectedLead.city || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium mb-1">Source</p>
-                        <Badge variant="outline" className="capitalize text-xs font-medium rounded-md">
-                          {selectedLead.source?.replace(/_/g, " ") || "—"}
-                        </Badge>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="text-[11px] text-gray-400 uppercase tracking-wide font-medium mb-1">Assigned To</p>
-                        <p className="text-sm font-semibold text-gray-900">
-                          {employees.find(e => e.id === selectedLead.assignedTo)?.name || (
-                            <span className="text-gray-400 italic font-normal">Unassigned</span>
-                          )}
-                        </p>
-                      </div>
+                  </div>
+                  <div className="p-5 grid grid-cols-2 gap-x-6 gap-y-4">
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Full Name</p>
+                      <p className="text-sm font-semibold text-gray-900">{selectedLead.name}</p>
                     </div>
-                  </section>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Phone</p>
+                      <p className="text-sm font-semibold text-gray-900">{selectedLead.phone || "—"}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Email</p>
+                      <p className="text-sm font-semibold text-gray-900 break-all">{selectedLead.email || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">City</p>
+                      <p className="text-sm font-semibold text-gray-900">{selectedLead.city || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Assigned To</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {employees.find(e => e.id === selectedLead.assignedTo)?.name || (
+                          <span className="text-gray-400 italic font-normal">Unassigned</span>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Created</p>
+                      <p className="text-sm font-medium text-gray-700">{formatDate(selectedLead.createdAt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Last Contact</p>
+                      <p className="text-sm font-medium text-gray-700">{formatDate(selectedLead.lastContactedAt)}</p>
+                    </div>
+                  </div>
+                </div>
 
-                  {/* Divider */}
-                  <div className="border-t border-gray-100" />
-
-                  {/* Budget card */}
-                  <section>
-                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4">Estimated Budget</p>
-                    <div className="rounded-xl bg-slate-900 p-5 text-white">
-                      <p className="text-[11px] text-slate-400 uppercase tracking-widest font-medium mb-2">Budget Value</p>
+                {/* Budget Card */}
+                <div className="rounded-xl bg-slate-900 p-5 text-white">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-2">Estimated Budget</p>
                       <p className="text-4xl font-black tracking-tight text-white">
                         {formatAmount(selectedLead.estimatedValue) || "—"}
                       </p>
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
-                        <span className="text-xs text-slate-400">Pipeline value</span>
-                        <Badge className="text-[11px] bg-white/10 text-slate-200 border-none hover:bg-white/10 font-medium">
-                          {STAGE_LABELS[selectedLead.stage]}
-                        </Badge>
-                      </div>
                     </div>
-                  </section>
-
-                  {/* Notes */}
-                  {selectedLead.notes && (
-                    <>
-                      <div className="border-t border-gray-100" />
-                      <section>
-                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Notes</p>
-                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                          <p className="text-sm text-amber-900 leading-relaxed">{selectedLead.notes}</p>
-                        </div>
-                      </section>
-                    </>
-                  )}
+                    <Badge className="text-xs bg-white/10 text-slate-200 border-none hover:bg-white/10 font-semibold px-3 py-1 rounded-full">
+                      {STAGE_LABELS[selectedLead.stage]}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-slate-700/60">
+                    <span className="text-xs text-slate-400">Pipeline value · {selectedLead.temperature} lead</span>
+                  </div>
                 </div>
 
-                {/* RIGHT: Follow-ups + Timeline */}
-                <div className="flex-[2] overflow-y-auto px-5 py-6 space-y-6 bg-gray-50/40">
-
-                  {/* Follow-ups */}
-                  <section>
-                    <div className="flex items-center justify-between mb-4">
-                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                        <Calendar className="h-3.5 w-3.5" /> Follow-ups
-                        <span className="bg-gray-200 text-gray-600 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                          {leadFollowUps.length}
-                        </span>
-                      </p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs gap-1 rounded-lg bg-white"
-                        onClick={() => setShowFollowUpForm(!showFollowUpForm)}
-                      >
-                        <Plus className="h-3 w-3" /> Add
-                      </Button>
+                {/* Notes */}
+                {selectedLead.notes && (
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-amber-100/70 bg-amber-100/40">
+                      <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Notes</p>
                     </div>
+                    <div className="p-4">
+                      <p className="text-sm text-amber-900 leading-relaxed">{selectedLead.notes}</p>
+                    </div>
+                  </div>
+                )}
 
+                {/* Follow-ups Card */}
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-gray-50 bg-gray-50/70 flex items-center justify-between">
+                    <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                      <Calendar className="h-3.5 w-3.5" /> Follow-ups
+                      <span className="bg-slate-200 text-slate-700 text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
+                        {leadFollowUps.length}
+                      </span>
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 rounded-lg bg-white"
+                      onClick={() => setShowFollowUpForm(!showFollowUpForm)}
+                    >
+                      <Plus className="h-3 w-3" /> Add
+                    </Button>
+                  </div>
+
+                  <div className="p-4 space-y-3">
                     {showFollowUpForm && (
-                      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4 space-y-3 shadow-sm">
+                      <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-3">
                         <Select
                           value={followUpData.type}
                           onValueChange={(val) => setFollowUpData({ ...followUpData, type: val as FollowUp["type"] })}
                         >
-                          <SelectTrigger className="h-9 text-xs rounded-lg"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-9 text-xs rounded-lg bg-white"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {FOLLOW_UP_TYPES.map((t) => (
                               <SelectItem key={t} value={t} className="capitalize">{t.replace(/_/g, " ")}</SelectItem>
@@ -641,112 +638,119 @@ export default function SalesPipelinePage() {
                         </Select>
                         <Input
                           type="datetime-local"
-                          className="h-9 text-xs rounded-lg"
+                          className="h-9 text-xs rounded-lg bg-white"
                           value={followUpData.date}
                           onChange={(e) => setFollowUpData({ ...followUpData, date: e.target.value })}
                         />
                         <Input
                           placeholder="Notes (optional)"
-                          className="h-9 text-xs rounded-lg"
+                          className="h-9 text-xs rounded-lg bg-white"
                           value={followUpData.notes}
                           onChange={(e) => setFollowUpData({ ...followUpData, notes: e.target.value })}
                         />
-                        <div className="flex justify-end gap-2 pt-1">
-                          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShowFollowUpForm(false)}>
-                            Cancel
-                          </Button>
-                          <Button size="sm" className="h-8 text-xs bg-slate-900 hover:bg-slate-800" onClick={handleAddFollowUp}>
-                            Schedule
-                          </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShowFollowUpForm(false)}>Cancel</Button>
+                          <Button size="sm" className="h-8 text-xs bg-slate-900 hover:bg-slate-800" onClick={handleAddFollowUp}>Schedule</Button>
                         </div>
                       </div>
                     )}
 
-                    {leadFollowUps.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 bg-white border border-dashed border-gray-200 rounded-xl">
-                        <Calendar className="h-6 w-6 text-gray-300 mb-2" />
-                        <p className="text-xs text-gray-400">No follow-ups scheduled</p>
+                    {leadFollowUps.length === 0 && !showFollowUpForm ? (
+                      <div className="flex flex-col items-center justify-center py-7 border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                        <Calendar className="h-7 w-7 text-gray-300 mb-2" />
+                        <p className="text-xs text-gray-400 font-medium">No follow-ups scheduled</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Click + Add to schedule one</p>
                       </div>
                     ) : (
                       <div className="space-y-2">
                         {leadFollowUps.map((fu) => (
-                          <div key={fu.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3.5 py-3 shadow-sm">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="outline" className="capitalize text-[10px] px-2 py-0.5 rounded-md font-medium">
+                          <div key={fu.id} className="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3 bg-gray-50/50 hover:bg-gray-50 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <Badge variant="outline" className="capitalize text-[10px] px-2 py-0.5 rounded-md font-semibold">
                                   {fu.type.replace(/_/g, " ")}
                                 </Badge>
-                                <Badge className={cn("text-[10px] border-none px-2 py-0.5 rounded-md font-medium",
+                                <Badge className={cn("text-[10px] border-none px-2 py-0.5 rounded-md font-semibold",
                                   fu.status === "completed" ? "bg-green-100 text-green-700" :
                                   fu.status === "missed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
                                 )}>
                                   {fu.status}
                                 </Badge>
                               </div>
-                              <p className="text-[11px] text-gray-400">{formatDateTime(fu.scheduledAt)}</p>
+                              <p className="text-xs text-gray-600 font-medium">{formatDateTime(fu.scheduledAt)}</p>
                               {fu.notes && <p className="text-[11px] text-gray-500 mt-0.5 truncate">{fu.notes}</p>}
                             </div>
                             {fu.status === "pending" && (
                               <button
                                 onClick={() => handleCompleteFollowUp(fu.id)}
-                                className="ml-2 shrink-0 rounded-full p-1 hover:bg-green-50 transition-colors"
+                                className="ml-3 shrink-0 rounded-full p-1.5 hover:bg-green-50 transition-colors"
+                                title="Mark complete"
                               >
-                                <CheckCircle className="h-4 w-4 text-green-500" />
+                                <CheckCircle className="h-4.5 w-4.5 text-green-500" />
                               </button>
                             )}
                           </div>
                         ))}
                       </div>
                     )}
-                  </section>
+                  </div>
+                </div>
 
-                  {/* Divider */}
-                  <div className="border-t border-gray-200" />
-
-                  {/* Activity Timeline */}
-                  <section>
-                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                {/* Activity Timeline Card */}
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-gray-50 bg-gray-50/70">
+                    <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
                       <Activity className="h-3.5 w-3.5" /> Activity Timeline
                     </p>
-                    <div className="space-y-0">
-                      {/* Lead created entry */}
-                      <div className="flex gap-3 pb-4 relative">
+                  </div>
+                  <div className="p-5">
+                    {/* Lead created */}
+                    <div className="flex gap-3 pb-4">
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="h-8 w-8 rounded-full bg-slate-100 border-2 border-white shadow-sm flex items-center justify-center">
+                          <User className="h-3.5 w-3.5 text-slate-500" />
+                        </div>
+                        {(selectedLead.timeline?.length ?? 0) > 0 && (
+                          <div className="w-px flex-1 bg-gray-200 mt-1.5" />
+                        )}
+                      </div>
+                      <div className="pt-0.5 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800">Lead Created</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{formatDateTime(selectedLead.createdAt)}</p>
+                      </div>
+                    </div>
+
+                    {selectedLead.timeline?.map((event, idx) => (
+                      <div key={idx} className="flex gap-3 pb-4">
                         <div className="flex flex-col items-center shrink-0">
-                          <div className="h-7 w-7 rounded-full bg-slate-100 border-2 border-white shadow flex items-center justify-center shrink-0">
-                            <User className="h-3 w-3 text-slate-500" />
+                          <div className="h-8 w-8 rounded-full bg-blue-50 border-2 border-white shadow-sm flex items-center justify-center">
+                            <Activity className="h-3.5 w-3.5 text-blue-500" />
                           </div>
-                          {((selectedLead.timeline?.length ?? 0) > 0) && (
-                            <div className="w-px flex-1 bg-gray-200 mt-1" />
+                          {idx < (selectedLead.timeline?.length ?? 0) - 1 && (
+                            <div className="w-px flex-1 bg-gray-200 mt-1.5" />
                           )}
                         </div>
-                        <div className="pb-1 min-w-0">
-                          <p className="text-xs font-semibold text-gray-800">Lead Created</p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{formatDateTime(selectedLead.createdAt)}</p>
+                        <div className="pt-0.5 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 leading-snug">{event.action}</p>
+                          {event.summary && (
+                            <p className="text-xs text-gray-500 mt-0.5 italic">"{event.summary}"</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">{formatDateTime(event.timestamp)}</p>
                         </div>
                       </div>
+                    ))}
 
-                      {selectedLead.timeline?.map((event, idx) => (
-                        <div key={idx} className="flex gap-3 pb-4 relative">
-                          <div className="flex flex-col items-center shrink-0">
-                            <div className="h-7 w-7 rounded-full bg-blue-50 border-2 border-white shadow flex items-center justify-center shrink-0">
-                              <Activity className="h-3 w-3 text-blue-500" />
-                            </div>
-                            {idx < (selectedLead.timeline?.length ?? 0) - 1 && (
-                              <div className="w-px flex-1 bg-gray-200 mt-1" />
-                            )}
-                          </div>
-                          <div className="pb-1 min-w-0">
-                            <p className="text-xs font-semibold text-gray-800 leading-snug">{event.action}</p>
-                            {event.summary && (
-                              <p className="text-[11px] text-gray-500 mt-0.5 italic">"{event.summary}"</p>
-                            )}
-                            <p className="text-[11px] text-gray-400 mt-0.5">{formatDateTime(event.timestamp)}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
+                    {(selectedLead.timeline?.length ?? 0) === 0 && (
+                      <div className="flex flex-col items-center justify-center py-6 border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                        <Activity className="h-6 w-6 text-gray-300 mb-2" />
+                        <p className="text-xs text-gray-400">No activity yet</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* Bottom padding */}
+                <div className="h-2" />
               </div>
             </>
           )}
