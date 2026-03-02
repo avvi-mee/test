@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { useFirestoreQuery } from "@/lib/firestoreQuery";
 import { createProjectFromLead } from "@/lib/services/projectService";
-import { calculateLeadScore, LeadScoringInput } from "@/lib/services/leadScoringService";
+import { calculateLeadScore, deriveTemperature, LeadScoringInput } from "@/lib/services/leadScoringService";
 import { hasAnyRole } from "@/lib/permissions";
 
 export interface Lead {
@@ -121,7 +121,7 @@ function mapDocToLead(id: string, data: any, activityLogs: any[] = []): Lead {
     status: data.status ?? "active",
     source: data.source ?? "website",
     score,
-    temperature: computeTemperature(score),
+    temperature: data.temperature || computeTemperature(score),
     estimatedValue: data.estimatedValue ?? 0,
     customerId: data.customerId ?? null,
     assignedTo: data.assignedTo ?? undefined,
@@ -254,7 +254,7 @@ export function useLeads(tenantId: string | null) {
         }
 
         // Fields that should never be written (read-only / computed)
-        const readOnlyFields = new Set(["id", "timeline", "temperature", "tenantId"]);
+        const readOnlyFields = new Set(["id", "timeline", "tenantId"]);
 
         const dbUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
 
@@ -484,4 +484,20 @@ export function useLeads(tenantId: string | null) {
   );
 
   return { leads, stats, loading, updateLead, addActivityLog, assignLead, changeStage, createLead, recalculateScore };
+}
+
+// --- Standalone: bulk-classify all leads by budget thresholds ---
+
+export async function classifyLeadsByBudget(
+  tenantId: string,
+  leads: Lead[],
+  thresholds: { hotAmount: number; warmAmount: number }
+): Promise<void> {
+  const db = getDb();
+  const batch = writeBatch(db);
+  for (const lead of leads) {
+    const temperature = deriveTemperature(lead.estimatedValue, thresholds);
+    batch.update(doc(db, `tenants/${tenantId}/leads`, lead.id), { temperature });
+  }
+  await batch.commit();
 }

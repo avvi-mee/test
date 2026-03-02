@@ -20,9 +20,14 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
+  Sliders,
+  Loader2,
 } from "lucide-react";
 import { useTenantAuth } from "@/hooks/useTenantAuth";
-import { useLeads, Lead, isValidTransition } from "@/hooks/useLeads";
+import { useLeads, Lead, isValidTransition, classifyLeadsByBudget } from "@/hooks/useLeads";
+import { useToast } from "@/hooks/use-toast";
+import { getDb } from "@/lib/firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useFollowUps, FollowUp } from "@/hooks/useFollowUps";
 import { useEmployees } from "@/hooks/useEmployees";
@@ -97,6 +102,7 @@ export default function SalesPipelinePage() {
   const tenantId = tenant?.id || null;
   const { leads, stats, loading, assignLead, changeStage, addActivityLog, recalculateScore } = useLeads(tenantId);
   const { employeeId, roles } = useCurrentUser();
+  const { toast } = useToast();
   const { followUps, todayFollowUps, overdueFollowUps, addFollowUp, completeFollowUp } = useFollowUps(tenantId);
   const { employees } = useEmployees(tenantId);
 
@@ -109,6 +115,12 @@ export default function SalesPipelinePage() {
   const [lostReason, setLostReason] = useState("");
   const [showLostDialog, setShowLostDialog] = useState(false);
   const [pendingLostLeadId, setPendingLostLeadId] = useState<string | null>(null);
+
+  // Budget temperature settings
+  const [budgetSettingsOpen, setBudgetSettingsOpen] = useState(false);
+  const [hotThreshold, setHotThreshold] = useState(1000000);
+  const [warmThreshold, setWarmThreshold] = useState(500000);
+  const [configSaving, setConfigSaving] = useState(false);
 
   const leadFollowUps = useMemo(() => {
     if (!selectedLead) return [];
@@ -197,6 +209,41 @@ export default function SalesPipelinePage() {
 
   const handleCompleteFollowUp = async (followUpId: string) => {
     await completeFollowUp(followUpId, "Completed");
+  };
+
+  const handleOpenBudgetSettings = async () => {
+    if (!tenantId) return;
+    const db = getDb();
+    const snap = await getDoc(doc(db, "tenants", tenantId));
+    if (snap.exists()) {
+      const config = snap.data()?.leadScoringConfig;
+      if (config) {
+        setHotThreshold(config.hotAmount ?? 1000000);
+        setWarmThreshold(config.warmAmount ?? 500000);
+      }
+    }
+    setBudgetSettingsOpen(true);
+  };
+
+  const handleSaveBudgetSettings = async (applyToAll: boolean) => {
+    if (!tenantId) return;
+    setConfigSaving(true);
+    try {
+      const db = getDb();
+      await updateDoc(doc(db, "tenants", tenantId), {
+        leadScoringConfig: { hotAmount: hotThreshold, warmAmount: warmThreshold },
+      });
+      if (applyToAll) {
+        await classifyLeadsByBudget(tenantId, leads, { hotAmount: hotThreshold, warmAmount: warmThreshold });
+      }
+      toast({ title: applyToAll ? "Applied to all leads successfully" : "Settings saved" });
+      setBudgetSettingsOpen(false);
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    } finally {
+      setConfigSaving(false);
+    }
   };
 
   const openDetails = (lead: Lead) => {
@@ -311,6 +358,15 @@ export default function SalesPipelinePage() {
             ))}
           </SelectContent>
         </Select>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-10 w-10 shrink-0 bg-white"
+          onClick={handleOpenBudgetSettings}
+          title="Budget Temperature Settings"
+        >
+          <Sliders className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Leads Table */}
@@ -771,6 +827,82 @@ export default function SalesPipelinePage() {
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setShowLostDialog(false)}>Cancel</Button>
               <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={confirmLost}>Confirm Lost</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Budget Temperature Settings Dialog */}
+      <Dialog open={budgetSettingsOpen} onOpenChange={setBudgetSettingsOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogTitle>Budget Temperature Settings</DialogTitle>
+          <DialogDescription>
+            Leads are auto-classified based on their budget vs. your thresholds.
+          </DialogDescription>
+          <div className="space-y-5 pt-2">
+            {/* Visual colour bar */}
+            <div className="flex rounded-full overflow-hidden h-2">
+              <div className="flex-1 bg-red-400" title="Hot" />
+              <div className="flex-1 bg-orange-400" title="Warm" />
+              <div className="flex-1 bg-sky-400" title="Cold" />
+            </div>
+
+            {/* Hot threshold */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                <Flame className="h-3.5 w-3.5 text-red-500" /> Hot above ₹
+              </label>
+              <Input
+                type="number"
+                value={hotThreshold}
+                onChange={(e) => setHotThreshold(Number(e.target.value))}
+                className="h-9"
+              />
+              <p className="text-xs text-gray-400">= ₹{hotThreshold.toLocaleString("en-IN")}</p>
+            </div>
+
+            {/* Warm threshold */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                <Thermometer className="h-3.5 w-3.5 text-orange-500" /> Warm above ₹
+              </label>
+              <Input
+                type="number"
+                value={warmThreshold}
+                onChange={(e) => setWarmThreshold(Number(e.target.value))}
+                className={cn("h-9", warmThreshold >= hotThreshold && "border-red-400")}
+              />
+              <p className="text-xs text-gray-400">= ₹{warmThreshold.toLocaleString("en-IN")}</p>
+              {warmThreshold >= hotThreshold && (
+                <p className="text-xs text-red-500">Must be less than Hot threshold</p>
+              )}
+            </div>
+
+            {/* Cold read-only label */}
+            <div className="flex items-center gap-1.5 text-sm text-gray-600 bg-sky-50 border border-sky-100 px-3 py-2 rounded-lg">
+              <Snowflake className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+              Below ₹{warmThreshold.toLocaleString("en-IN")} → Cold
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                className="flex-1 h-9 text-sm"
+                disabled={configSaving || warmThreshold >= hotThreshold}
+                onClick={() => handleSaveBudgetSettings(false)}
+              >
+                Save Only
+              </Button>
+              <Button
+                className="flex-1 h-9 text-sm bg-slate-900 hover:bg-slate-800"
+                disabled={configSaving || warmThreshold >= hotThreshold}
+                onClick={() => handleSaveBudgetSettings(true)}
+              >
+                {configSaving ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Saving...</>
+                ) : "Save & Apply to All"}
+              </Button>
             </div>
           </div>
         </DialogContent>

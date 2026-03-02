@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getDb } from "@/lib/firebase";
+import { getDb, getFirebaseAuth } from "@/lib/firebase";
 import {
     doc, getDoc, collection, onSnapshot, updateDoc, query, where, orderBy
 } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import {
     Loader2, LogOut, Phone, MapPin, FileText, MessageSquare,
     Calendar, CheckCircle, TrendingUp, Briefcase, DollarSign,
@@ -149,129 +150,151 @@ export default function EmployeeDashboard() {
 
         const { id, tenantId } = sessionData;
         const db = getDb();
+        const auth = getFirebaseAuth();
 
-        const empRef = doc(db, `tenants/${tenantId}/employees`, id);
-        const empUnsub = onSnapshot(empRef, (snap) => {
-            if (!snap.exists()) {
+        // Track Firestore unsubscribers so we can clean up on unmount
+        const firestoreUnsubs: (() => void)[] = [];
+        let listenersStarted = false;
+
+        // Wait for Firebase Auth to restore its state before starting Firestore
+        // listeners. Without this, listeners fire before the auth token is ready
+        // and Firestore returns permission-denied errors.
+        const authUnsub = onAuthStateChanged(auth, (user) => {
+            if (!user) {
                 sessionStorage.removeItem("employeeSession");
                 router.push("/login");
                 return;
             }
-            const data = snap.data();
-            const roles: string[] = data.roles ?? data.role_names ?? (data.role ? [data.role] : []);
-            setEmployee({
-                id: snap.id,
-                tenantId,
-                name: data.fullName ?? data.full_name ?? data.name ?? "",
-                email: data.email ?? "",
-                area: data.area ?? "",
-                phone: data.phone ?? "",
-                totalWork: data.total_work ?? 0,
-                currentWork: data.current_work ?? "None",
-                roles,
+
+            // Only register listeners once (onAuthStateChanged can fire multiple times)
+            if (listenersStarted) return;
+            listenersStarted = true;
+
+            const empRef = doc(db, `tenants/${tenantId}/employees`, id);
+            const empUnsub = onSnapshot(empRef, (snap) => {
+                if (!snap.exists()) {
+                    sessionStorage.removeItem("employeeSession");
+                    router.push("/login");
+                    return;
+                }
+                const data = snap.data();
+                const roles: string[] = data.roles ?? data.role_names ?? (data.role ? [data.role] : []);
+                setEmployee({
+                    id: snap.id,
+                    tenantId,
+                    name: data.fullName ?? data.full_name ?? data.name ?? "",
+                    email: data.email ?? "",
+                    area: data.area ?? "",
+                    phone: data.phone ?? "",
+                    totalWork: data.total_work ?? 0,
+                    currentWork: data.current_work ?? "None",
+                    roles,
+                });
+                setLoading(false);
             });
-            setLoading(false);
-        });
+            firestoreUnsubs.push(empUnsub);
 
-        // Brand name
-        getDoc(doc(db, `tenants/${tenantId}/pages/brand`)).then((snap) => {
-            if (snap.exists()) {
-                const c = snap.data().content || snap.data();
-                setBrandName(c.brandName || "");
-            }
-        });
-
-        // Estimates (designer / project_manager / site_supervisor)
-        const ordersUnsub = onSnapshot(collection(db, `tenants/${tenantId}/estimates`), (snap) => {
-            const all = snap.docs.map((d) => {
-                const r = d.data();
-                return {
-                    id: d.id,
-                    clientName: r.client_name,
-                    customerInfo: r.customer_info,
-                    plan: r.plan,
-                    totalAmount: r.total_amount,
-                    estimatedAmount: r.estimated_amount,
-                    status: r.status,
-                    assignedTo: r.assigned_to,
-                    createdAt: r.created_at,
-                    timeline: r.timeline || [],
-                } as AssignedOrder;
+            // Brand name
+            getDoc(doc(db, `tenants/${tenantId}/pages/brand`)).then((snap) => {
+                if (snap.exists()) {
+                    const c = snap.data().content || snap.data();
+                    setBrandName(c.brandName || "");
+                }
             });
-            setOrders(all.filter((o) => o.assignedTo === id));
-        });
 
-        // Consultations (sales / general)
-        const requestsUnsub = onSnapshot(collection(db, `tenants/${tenantId}/consultations`), (snap) => {
-            const all = snap.docs.map((d) => {
-                const r = d.data();
-                return {
-                    id: d.id,
-                    clientName: r.client_name || r.name,
-                    phone: r.phone,
-                    phoneNumber: r.phone_number,
-                    requirement: r.requirement,
-                    status: r.status,
-                    createdAt: r.created_at,
-                    assignedTo: r.assigned_to,
-                    timeline: r.timeline || [],
-                } as AssignedRequest;
-            });
-            setRequests(all.filter((r) => r.assignedTo === id));
-        });
-
-        // Leads (sales)
-        const leadsUnsub = onSnapshot(
-            query(collection(db, `tenants/${tenantId}/leads`), where("assignedTo", "==", id)),
-            (snap) => {
-                setLeads(snap.docs.map((d) => {
+            // Estimates (designer / project_manager / site_supervisor)
+            const ordersUnsub = onSnapshot(collection(db, `tenants/${tenantId}/estimates`), (snap) => {
+                const all = snap.docs.map((d) => {
                     const r = d.data();
                     return {
                         id: d.id,
-                        name: r.name ?? "",
-                        phone: r.phone,
-                        email: r.email,
-                        stage: r.stage ?? "new",
-                        temperature: r.temperature ?? "cold",
-                        estimatedValue: r.estimatedValue,
-                        assignedTo: r.assignedTo,
-                        lastContactedAt: r.lastContactedAt,
-                        createdAt: r.createdAt,
-                        nextFollowUp: r.nextFollowUp,
-                    } as AssignedLead;
-                }));
-            }
-        );
-
-        // Projects (project_manager / site_supervisor / designer)
-        const projectsUnsub = onSnapshot(collection(db, `tenants/${tenantId}/projects`), (snap) => {
-            const all = snap.docs.map((d) => {
-                const r = d.data();
-                return {
-                    id: d.id,
-                    clientName: r.clientName ?? "",
-                    projectName: r.name ?? "",
-                    status: r.status ?? "planning",
-                    startDate: r.startDate,
-                    expectedEndDate: r.targetEndDate,
-                    totalAmount: r.contractValue,
-                    assignedDesigner: r.designerId,
-                    assignedSupervisor: r.supervisorId,
-                    assignedTo: r.managerId,
-                    createdAt: r.createdAt,
-                } as AssignedProject;
+                        clientName: r.client_name,
+                        customerInfo: r.customer_info,
+                        plan: r.plan,
+                        totalAmount: r.total_amount,
+                        estimatedAmount: r.estimated_amount,
+                        status: r.status,
+                        assignedTo: r.assigned_to,
+                        createdAt: r.created_at,
+                        timeline: r.timeline || [],
+                    } as AssignedOrder;
+                });
+                setOrders(all.filter((o) => o.assignedTo === id));
             });
-            setProjects(all.filter((p) =>
-                p.assignedTo === id || p.assignedDesigner === id || p.assignedSupervisor === id
-            ));
+            firestoreUnsubs.push(ordersUnsub);
+
+            // Consultations (sales / general)
+            const requestsUnsub = onSnapshot(collection(db, `tenants/${tenantId}/consultations`), (snap) => {
+                const all = snap.docs.map((d) => {
+                    const r = d.data();
+                    return {
+                        id: d.id,
+                        clientName: r.client_name || r.name,
+                        phone: r.phone,
+                        phoneNumber: r.phone_number,
+                        requirement: r.requirement,
+                        status: r.status,
+                        createdAt: r.created_at,
+                        assignedTo: r.assigned_to,
+                        timeline: r.timeline || [],
+                    } as AssignedRequest;
+                });
+                setRequests(all.filter((r) => r.assignedTo === id));
+            });
+            firestoreUnsubs.push(requestsUnsub);
+
+            // Leads (sales)
+            const leadsUnsub = onSnapshot(
+                query(collection(db, `tenants/${tenantId}/leads`), where("assignedTo", "==", id)),
+                (snap) => {
+                    setLeads(snap.docs.map((d) => {
+                        const r = d.data();
+                        return {
+                            id: d.id,
+                            name: r.name ?? "",
+                            phone: r.phone,
+                            email: r.email,
+                            stage: r.stage ?? "new",
+                            temperature: r.temperature ?? "cold",
+                            estimatedValue: r.estimatedValue,
+                            assignedTo: r.assignedTo,
+                            lastContactedAt: r.lastContactedAt,
+                            createdAt: r.createdAt,
+                            nextFollowUp: r.nextFollowUp,
+                        } as AssignedLead;
+                    }));
+                }
+            );
+            firestoreUnsubs.push(leadsUnsub);
+
+            // Projects (project_manager / site_supervisor / designer)
+            const projectsUnsub = onSnapshot(collection(db, `tenants/${tenantId}/projects`), (snap) => {
+                const all = snap.docs.map((d) => {
+                    const r = d.data();
+                    return {
+                        id: d.id,
+                        clientName: r.clientName ?? "",
+                        projectName: r.name ?? "",
+                        status: r.status ?? "planning",
+                        startDate: r.startDate,
+                        expectedEndDate: r.targetEndDate,
+                        totalAmount: r.contractValue,
+                        assignedDesigner: r.designerId,
+                        assignedSupervisor: r.supervisorId,
+                        assignedTo: r.managerId,
+                        createdAt: r.createdAt,
+                    } as AssignedProject;
+                });
+                setProjects(all.filter((p) =>
+                    p.assignedTo === id || p.assignedDesigner === id || p.assignedSupervisor === id
+                ));
+            });
+            firestoreUnsubs.push(projectsUnsub);
         });
 
         return () => {
-            empUnsub();
-            ordersUnsub();
-            requestsUnsub();
-            leadsUnsub();
-            projectsUnsub();
+            authUnsub();
+            firestoreUnsubs.forEach((fn) => fn());
         };
     }, [router]);
 
