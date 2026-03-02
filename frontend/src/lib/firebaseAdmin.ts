@@ -14,13 +14,23 @@ function ensureAdminApp(): App {
     if (getApps().length > 0) {
       _adminApp = getApps()[0];
     } else {
-      _adminApp = initializeApp({
-        credential: cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-        }),
-      });
+      // Primary: full service account JSON (JSON.parse handles newlines automatically)
+      const jsonEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      if (jsonEnv) {
+        const serviceAccount = JSON.parse(jsonEnv);
+        _adminApp = initializeApp({ credential: cert(serviceAccount) });
+      } else {
+        // Fallback: individual env vars (strip wrapping quotes if present)
+        _adminApp = initializeApp({
+          credential: cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY
+              ?.replace(/^"|"$/g, "")
+              .replace(/\\n/g, "\n"),
+          }),
+        });
+      }
     }
   }
   return _adminApp;

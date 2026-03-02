@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { getTenantUrl } from "@/lib/tenantUrl";
+import { getFirebaseAuth } from "@/lib/firebase";
 
 // Import tab components
 import BrandTab from "@/components/dashboard/website-builder/BrandTab";
@@ -34,9 +35,13 @@ export default function WebsiteSetupPage() {
         if (!tenant || tenant.slug || generatedSlug || slugAttempted) return;
         setSlugAttempted(true);
         try {
+            const idToken = await getFirebaseAuth().currentUser?.getIdToken();
             const res = await fetch("/api/ensure-slug", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${idToken}`,
+                },
                 body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name }),
             });
             const data = await res.json();
