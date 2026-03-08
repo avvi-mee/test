@@ -18,6 +18,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { useFirestoreQuery } from "@/lib/firestoreQuery";
+import type { EmployeeRole } from "@/types";
 
 // =============================================================================
 // Firebase/Firestore migration:
@@ -33,7 +34,7 @@ export interface TeamMember {
   phone: string;
   avatarUrl?: string;
   area: string;
-  roles: string[];      // role names
+  roles: EmployeeRole[];
   isOwner: boolean;
   isActive: boolean;
   joinedAt: string;
@@ -53,7 +54,7 @@ function mapDocToTeamMember(id: string, data: any): TeamMember {
     phone: data.phone ?? "",
     avatarUrl: data.avatarUrl,
     area: data.area ?? "",
-    roles: data.roles ?? data.role_names ?? (data.role ? [data.role] : []),
+    roles: (data.roles ?? data.role_names ?? (data.role ? [data.role] : [])) as EmployeeRole[],
     isOwner: data.isOwner ?? data.is_owner ?? false,
     isActive: data.isActive ?? data.is_active ?? true,
     joinedAt: data.joinedAt ?? data.createdAt ?? data.created_at ?? "",
@@ -189,14 +190,7 @@ export function useTeam(tenantId: string | null) {
       if (!tenantId) return false;
       try {
         const db = getDb();
-        // Soft-deactivate instead of hard delete
-        await updateDoc(
-          doc(db, `tenants/${tenantId}/employees`, employeeId),
-          {
-            isActive: false,
-            deactivatedAt: serverTimestamp(),
-          }
-        );
+        await deleteDoc(doc(db, `tenants/${tenantId}/employees`, employeeId));
         invalidate();
         return true;
       } catch (error) {
@@ -209,7 +203,7 @@ export function useTeam(tenantId: string | null) {
 
   const getMembersByRole = useCallback(
     (roleName: string) =>
-      members.filter((m) => m.roles.includes(roleName) && m.isActive),
+      members.filter((m) => (m.roles as string[]).includes(roleName) && m.isActive),
     [members]
   );
 

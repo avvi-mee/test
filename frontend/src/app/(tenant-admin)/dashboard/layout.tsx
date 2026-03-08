@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useTheme } from '@/components/ThemeProvider'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -10,7 +11,7 @@ import { useBrand } from '@/hooks/useWebsiteBuilder'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { useContracts } from '@/hooks/useContracts'
 import { useLeads } from '@/hooks/useLeads'
-import { getAllowedSidebarHrefs } from '@/lib/permissions'
+import { useInvoices } from '@/hooks/useInvoices'
 
 // ─── Inline SVG Icons ─────────────────────────────────────────────────────────
 const Icons = {
@@ -132,60 +133,78 @@ const Icons = {
       <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
     </svg>
   ),
+  receipt: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>
+    </svg>
+  ),
+  clipboard: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+      <line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="14" y2="15"/>
+    </svg>
+  ),
 }
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
-interface NavItem  { label: string; href: string; icon: React.ReactNode; badgeKey?: 'leads' | 'contracts'; badgeStyle?: 'teal' | 'amber' | 'red' }
+interface NavItem  { label: string; href: string; icon: React.ReactNode; roles: string[]; badgeKey?: 'leads' | 'contracts' | 'overdue_invoices'; badgeStyle?: 'teal' | 'amber' | 'red' }
 interface NavGroup { label?: string; items: NavItem[]; divider?: boolean }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     divider: true,
     items: [
-      { label: 'Dashboard',      href: '/dashboard',                       icon: Icons.grid    },
-      { label: 'Sales Pipeline', href: '/dashboard/orders',                icon: Icons.target, badgeKey: 'leads',     badgeStyle: 'teal' },
-      { label: 'Consultations',  href: '/dashboard/consultation-requests', icon: Icons.chat    },
-      { label: 'Projects',       href: '/dashboard/projects',              icon: Icons.book    },
-      { label: 'Contracts',      href: '/dashboard/contracts',             icon: Icons.check,  badgeKey: 'contracts', badgeStyle: 'red'  },
+      { label: 'Dashboard',      href: '/dashboard',                       icon: Icons.grid,   roles: ['*']                                                              },
+      { label: 'Sales Pipeline', href: '/dashboard/orders',                icon: Icons.target, roles: ['owner','admin','sales'],                              badgeKey: 'leads',     badgeStyle: 'teal' },
+      { label: 'Consultations',  href: '/dashboard/consultation-requests', icon: Icons.chat,   roles: ['owner','admin','sales']                                           },
+      { label: 'Projects',       href: '/dashboard/projects',              icon: Icons.book,   roles: ['owner','admin','project_manager','designer','site_supervisor']    },
+      { label: 'Contracts',      href: '/dashboard/contracts',             icon: Icons.check,  roles: ['owner','admin','sales'],                              badgeKey: 'contracts', badgeStyle: 'red'  },
     ],
   },
   {
     label: 'Finance',
     divider: true,
     items: [
-      { label: 'Finance',  href: '/dashboard/finance',  icon: Icons.dollar   },
-      { label: 'Vendors',  href: '/dashboard/vendors',  icon: Icons.building },
+      { label: 'Finance',       href: '/dashboard/finance',           icon: Icons.dollar,    roles: ['owner','admin','accountant']                                                    },
+      { label: 'Invoices',      href: '/dashboard/finance/invoices',  icon: Icons.receipt,   roles: ['owner','admin','accountant'], badgeKey: 'overdue_invoices', badgeStyle: 'red' },
+      { label: 'Vendor Bills',  href: '/dashboard/finance/bills',     icon: Icons.clipboard, roles: ['owner','admin','accountant']                                                    },
+      { label: 'Vendors',       href: '/dashboard/vendors',           icon: Icons.building,  roles: ['owner','admin','accountant']                                                    },
     ],
   },
   {
     divider: true,
     items: [
-      { label: 'Employees',  href: '/dashboard/employees', icon: Icons.users    },
-      { label: 'Analytics',  href: '/dashboard/analytics', icon: Icons.barChart },
+      { label: 'Employees',  href: '/dashboard/employees', icon: Icons.users,    roles: ['owner','admin'] },
+      { label: 'Analytics',  href: '/dashboard/analytics', icon: Icons.barChart, roles: ['owner','admin'] },
     ],
   },
   {
     label: 'Setup',
     items: [
-      { label: 'Website Setup',  href: '/dashboard/website-setup', icon: Icons.globe    },
-      { label: 'Pricing Config', href: '/dashboard/pricing',        icon: Icons.dollar   },
-      { label: 'Settings',       href: '/dashboard/settings',       icon: Icons.settings },
+      { label: 'Website Setup',  href: '/dashboard/website-setup', icon: Icons.globe,    roles: ['owner','admin'] },
+      { label: 'Pricing Config', href: '/dashboard/pricing',        icon: Icons.dollar,   roles: ['owner','admin'] },
+      { label: 'Settings',       href: '/dashboard/settings',       icon: Icons.settings, roles: ['owner','admin'] },
     ],
   },
 ]
 
 const HREF_TO_LABEL: Record<string, string> = {
-  '/dashboard':                       'Dashboard',
-  '/dashboard/orders':                'Sales Pipeline',
-  '/dashboard/consultation-requests': 'Consultations',
-  '/dashboard/projects':              'Projects',
-  '/dashboard/contracts':             'Contracts',
-  '/dashboard/finance':               'Finance',
-  '/dashboard/vendors':               'Vendors',
-  '/dashboard/employees':             'Employees',
-  '/dashboard/analytics':             'Analytics',
-  '/dashboard/website-setup':         'Website Setup',
-  '/dashboard/pricing':               'Pricing Config',
+  '/dashboard':                        'Dashboard',
+  '/dashboard/orders':                 'Sales Pipeline',
+  '/dashboard/consultation-requests':  'Consultations',
+  '/dashboard/projects':               'Projects',
+  '/dashboard/contracts':              'Contracts',
+  '/dashboard/finance':                'Finance',
+  '/dashboard/finance/invoices':       'Invoices',
+  '/dashboard/finance/bills':          'Vendor Bills',
+  '/dashboard/vendors':                'Vendors',
+  '/dashboard/employees':              'Employees',
+  '/dashboard/analytics':              'Analytics',
+  '/dashboard/website-setup':          'Website Setup',
+  '/dashboard/pricing':                'Pricing Config',
   '/dashboard/settings':              'Settings',
 }
 
@@ -213,29 +232,24 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   const { roles, firebaseUser, userType }            = useCurrentUser()
   const { stats: contractStats }                     = useContracts(tenant?.id ?? null)
   const { leads }                                    = useLeads(tenant?.id ?? null)
+  const { invoices }                                 = useInvoices(tenant?.id ?? null)
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [theme, setTheme]             = useState<'light' | 'dark'>('light')
+  const { theme, toggle: toggleTheme } = useTheme()
 
-  // Load theme from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('unmatrix-theme') as 'light' | 'dark' | null
-    const initial = saved ?? 'light'
-    setTheme(initial)
-    document.documentElement.setAttribute('data-theme', initial)
-  }, [])
+  const effectiveRoles = roles.length > 0 ? roles : (userType === 'owner' ? ['owner'] : [])
 
-  const toggleTheme = () => {
-    const next: 'light' | 'dark' = theme === 'light' ? 'dark' : 'light'
-    setTheme(next)
-    localStorage.setItem('unmatrix-theme', next)
-    document.documentElement.setAttribute('data-theme', next)
+  function canSee(item: NavItem): boolean {
+    if (item.roles.includes('*')) return true
+    return item.roles.some(r => effectiveRoles.includes(r))
   }
 
-  const effectiveRoles  = roles.length > 0 ? roles : userType === 'employee' ? [] : ['owner']
-  const allowedHrefs    = getAllowedSidebarHrefs(effectiveRoles)
-  const leadsCount      = leads.length
-  const expiringCount   = contractStats.expiring
+  const isAdminLike = effectiveRoles.some(r => ['owner', 'admin'].includes(r))
+  const leadsCount  = isAdminLike
+    ? leads.length
+    : leads.filter(l => l.assignedTo === firebaseUser?.uid).length
+  const expiringCount        = contractStats.expiring
+  const overdueInvoiceCount  = invoices.filter(inv => inv.status === 'overdue').length
 
   const displayName  = firebaseUser?.displayName || firebaseUser?.email?.split('@')[0] || 'Admin'
   const primaryRole  = roles[0] ?? 'owner'
@@ -248,12 +262,15 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
 
   function isActive(href: string): boolean {
     if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/dashboard/'
+    // Finance overview: only exact match so sub-pages (invoices, bills) don't activate it
+    if (href === '/dashboard/finance') return pathname === '/dashboard/finance' || pathname === '/dashboard/finance/'
     return pathname.startsWith(href)
   }
 
   function getBadgeCount(key?: string): number {
-    if (key === 'leads')     return leadsCount
-    if (key === 'contracts') return expiringCount
+    if (key === 'leads')            return leadsCount
+    if (key === 'contracts')        return expiringCount
+    if (key === 'overdue_invoices') return overdueInvoiceCount
     return 0
   }
 
@@ -332,7 +349,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
         <style>{`aside nav::-webkit-scrollbar { display: none; }`}</style>
 
         {NAV_GROUPS.map((group, gi) => {
-          const visibleItems = group.items.filter(item => allowedHrefs.has(item.href))
+          const visibleItems = group.items.filter(canSee)
           if (visibleItems.length === 0) return null
 
           return (

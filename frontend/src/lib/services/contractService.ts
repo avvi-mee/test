@@ -1,4 +1,4 @@
-import { getDb, getFirebaseStorage } from "@/lib/firebase";
+import { getDb, getFirebaseAuth } from "@/lib/firebase";
 import {
   doc,
   getDoc,
@@ -13,7 +13,6 @@ import {
   runTransaction,
   serverTimestamp,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type {
   Contract,
   ContractActivityLog,
@@ -241,14 +240,23 @@ export async function uploadContractPdf(
   contractId: string,
   pdfBlob: Blob
 ): Promise<string> {
-  const storage = getFirebaseStorage();
-  const storageRef = ref(
-    storage,
-    `contracts/${tenantId}/${contractId}/contract.pdf`
-  );
+  const pdfFile = new File([pdfBlob], `${contractId}.pdf`, { type: "application/pdf" });
+  const formData = new FormData();
+  formData.append("file", pdfFile);
+  formData.append("tenantId", tenantId);
+  formData.append("folder", `contracts/${contractId}`);
 
-  await uploadBytes(storageRef, pdfBlob, { contentType: "application/pdf" });
-  const pdfUrl = await getDownloadURL(storageRef);
+  const auth = getFirebaseAuth();
+  const token = await auth.currentUser?.getIdToken();
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!res.ok) throw new Error("Failed to upload contract PDF");
+  const data = await res.json();
+  const pdfUrl: string = data.url;
 
   await updateContract(tenantId, contractId, {
     pdfUrl,

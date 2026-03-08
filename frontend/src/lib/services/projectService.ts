@@ -26,6 +26,14 @@ export interface Project {
   projectName?: string;
   assignedDesigner?: string;
   assignedSupervisor?: string;
+  team?: {
+    designerIds: string[];
+    supervisorIds: string[];
+    pmIds: string[];
+    accountantIds: string[];
+  };
+  clientAccessEmail?: string | null;
+  clientAuthUid?: string | null;
   phases: import("./taskTemplates").Phase[];
   startDate?: string;
   expectedEndDate?: string;

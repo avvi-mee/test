@@ -1,5 +1,6 @@
 "use client";
 
+import type { Lead } from "@/types";
 import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getDb } from "@/lib/firebase";
@@ -20,37 +21,7 @@ import { createProjectFromLead } from "@/lib/services/projectService";
 import { calculateLeadScore, deriveTemperature, LeadScoringInput } from "@/lib/services/leadScoringService";
 import { hasAnyRole } from "@/lib/permissions";
 
-export interface Lead {
-  id: string;
-  tenantId: string;
-  name: string;
-  email: string;
-  phone: string;
-  city?: string;
-  stage: "new" | "contacted" | "qualified" | "proposal_sent" | "negotiation" | "won" | "lost";
-  status?: "active" | "converted" | "closed";
-  source: "website" | "consultation" | "referral" | "manual" | "import";
-  score: number;
-  temperature: "hot" | "warm" | "cold";
-  estimatedValue: number;
-  assignedTo?: string;
-  customerId?: string | null;
-  estimateId?: string;
-  projectId?: string;
-  nextFollowUp?: any;
-  followUpCount: number;
-  lastContactedAt?: any;
-  lostReason?: string;
-  notes?: string;
-  createdAt: any;
-  updatedAt?: any;
-  timeline: Array<{
-    action: string;
-    summary: string;
-    timestamp: any;
-    actorId?: string;
-  }>;
-}
+export type { Lead };
 
 export interface LeadStats {
   total: number;

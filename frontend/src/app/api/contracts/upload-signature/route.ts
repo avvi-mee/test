@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminStorage } from "@/lib/firebaseAdmin";
+import { getAdminStorage, getAdminAuth } from "@/lib/firebaseAdmin";
 
 export async function POST(req: NextRequest) {
   try {
+    const authHeader = req.headers.get("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    try {
+      await getAdminAuth().verifyIdToken(token);
+    } catch {
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    }
+
     const { tenantId, contractId, dataUrl, filename = "signature-partyB.png" } = await req.json();
 
     if (!tenantId || !contractId || !dataUrl) {

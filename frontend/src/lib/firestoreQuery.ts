@@ -57,7 +57,9 @@ export function useFirestoreQuery<T>({
         queryClient.setQueryData(queryKey, data);
       },
       (error) => {
-        console.error("Firestore listener error:", error);
+        // Use warn instead of error to avoid triggering the Next.js error overlay
+        // for transient permission errors during auth state transitions
+        console.warn("Firestore listener error:", error);
       }
     );
 
@@ -113,7 +115,7 @@ export function useFirestoreDoc<T>({
         queryClient.setQueryData(queryKey, data);
       },
       (error) => {
-        console.error("Firestore doc listener error:", error);
+        console.warn("Firestore doc listener error:", error);
       }
     );
 

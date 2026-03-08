@@ -19,13 +19,15 @@ export interface VendorBill {
   tenantId: string;
   projectId: string;
   vendorName: string;
+  billNumber?: string;
   amount: number;
   dueDate: any;
-  status: "pending" | "partial" | "paid" | "overdue";
+  status: "received" | "approved" | "paid" | "disputed" | "pending" | "partial" | "overdue";
   paidAmount: number;
   agingBucket?: AgingBucketLabel;
   description?: string;
   category?: string;
+  attachmentUrl?: string;
   projectPhaseId?: string;
   createdAt: any;
   updatedAt?: any;
@@ -48,13 +50,15 @@ export function mapRowToVendorBill(id: string, data: any): VendorBill {
     tenantId: data.tenantId || "",
     projectId: data.projectId || "",
     vendorName: data.vendorName || "",
+    billNumber: data.billNumber || undefined,
     amount: Number(data.amount) || 0,
     dueDate: data.dueDate,
-    status: data.status || "pending",
+    status: data.status || "received",
     paidAmount: Number(data.paidAmount) || 0,
     agingBucket: "current" as AgingBucketLabel,
     description: data.description || data.notes,
     category: data.category,
+    attachmentUrl: data.attachmentUrl || undefined,
     projectPhaseId: data.projectPhaseId,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
@@ -65,11 +69,17 @@ export function mapRowToVendorBill(id: string, data: any): VendorBill {
 export async function createVendorBill(
   tenantId: string,
   data: {
-    projectId: string;
+    projectId?: string;
+    vendorId?: string;
     vendorName: string;
+    billNumber?: string;
     amount: number;
-    dueDate: Date;
+    dueDate?: Date;
     description?: string;
+    attachmentUrl?: string;
+    category?: string;
+    status?: VendorBill["status"];
+    paidAmount?: number;
   }
 ): Promise<string> {
   const db = getDb();
@@ -77,7 +87,7 @@ export async function createVendorBill(
   // Use a dedup lock doc to prevent race conditions.
   // The lock doc ID is deterministic — concurrent identical requests will
   // contend on the same document inside the transaction.
-  const dedupKey = `dedup_${data.projectId}_${data.vendorName}_${data.amount}`;
+  const dedupKey = `dedup_${data.projectId ?? "none"}_${data.vendorName}_${data.amount}`;
   const dedupRef = doc(db, `tenants/${tenantId}/vendorBills`, dedupKey);
 
   const billId = await runTransaction(db, async (tx) => {
@@ -92,16 +102,21 @@ export async function createVendorBill(
 
     const billRef = doc(collection(db, `tenants/${tenantId}/vendorBills`));
     const now = new Date().toISOString();
+    const paidAmt = data.paidAmount ?? 0;
     tx.set(billRef, {
       tenantId: tenantId,
-      projectId: data.projectId,
+      projectId: data.projectId || null,
+      vendorId: data.vendorId || null,
       vendorName: data.vendorName,
+      billNumber: data.billNumber || null,
       amount: data.amount,
-      dueDate: data.dueDate.toISOString().split("T")[0],
-      status: "pending",
-      paidAmount: 0,
-      balance: data.amount,
+      dueDate: data.dueDate ? data.dueDate.toISOString().split("T")[0] : null,
+      status: data.status || "received",
+      paidAmount: paidAmt,
+      balance: data.amount - paidAmt,
+      category: data.category || null,
       description: data.description || null,
+      attachmentUrl: data.attachmentUrl || null,
       createdAt: now,
       updatedAt: now,
     });

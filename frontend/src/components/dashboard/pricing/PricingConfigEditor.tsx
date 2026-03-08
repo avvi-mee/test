@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Pencil, ChevronDown, ChevronUp, GripVertical, Loader2, Check } from "lucide-react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import { Plus, Trash2, Pencil, ChevronDown, ChevronUp, GripVertical, Loader2, Check, Home, Building2, Settings } from "lucide-react";
 import {
     usePricingConfig,
     PricingConfig,
@@ -750,10 +750,10 @@ export default function PricingConfigEditor({ tenantId }: { tenantId: string }) 
     const residentialCount = categories.filter(c => (c.type ?? "residential") === "residential").length;
     const commercialCount = categories.filter(c => c.type === "commercial").length;
 
-    const TABS: { key: TabKey; icon: string; label: string; count?: number }[] = [
-        { key: "residential", icon: "🏠", label: "Residential", count: residentialCount },
-        { key: "commercial",  icon: "🏢", label: "Commercial",  count: commercialCount },
-        { key: "settings",    icon: "⚙️", label: "Settings" },
+    const TABS: { key: TabKey; icon: ReactNode; label: string; count?: number }[] = [
+        { key: "residential", icon: <Home className="h-3.5 w-3.5" />, label: "Residential", count: residentialCount },
+        { key: "commercial",  icon: <Building2 className="h-3.5 w-3.5" />, label: "Commercial",  count: commercialCount },
+        { key: "settings",    icon: <Settings className="h-3.5 w-3.5" />, label: "Settings" },
     ];
 
     // ── Render ────────────────────────────────────────────────────────────────

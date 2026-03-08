@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useCompanies } from "@/hooks/useCompanies";
 import { getDb } from "@/lib/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { Loader2, Zap, Search } from "lucide-react";
+import { Loader2, Zap, Search, IndianRupee, FileSignature, Lock, BarChart2, Building2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 // ─── Feature definitions ──────────────────────────────────────────────────────
 
-const FEATURES: Array<{ key: string; label: string; description: string; icon: string }> = [
-  { key: "finance",        label: "Finance Module",    description: "Invoices, vendor bills, cash flow", icon: "💰" },
-  { key: "contracts",      label: "Contract System",   description: "Create, send, and sign contracts",  icon: "📝" },
-  { key: "clientPortal",   label: "Client Portal",     description: "Clients can log in to track projects", icon: "🔐" },
-  { key: "analytics",      label: "Analytics",         description: "Revenue charts and pipeline analytics", icon: "📊" },
-  { key: "multiBranch",    label: "Multi-Branch",      description: "Manage multiple branches/locations", icon: "🏢" },
+const FEATURES: Array<{ key: string; label: string; description: string; icon: ReactNode }> = [
+  { key: "finance",        label: "Finance Module",    description: "Invoices, vendor bills, cash flow", icon: <IndianRupee className="h-5 w-5" /> },
+  { key: "contracts",      label: "Contract System",   description: "Create, send, and sign contracts",  icon: <FileSignature className="h-5 w-5" /> },
+  { key: "clientPortal",   label: "Client Portal",     description: "Clients can log in to track projects", icon: <Lock className="h-5 w-5" /> },
+  { key: "analytics",      label: "Analytics",         description: "Revenue charts and pipeline analytics", icon: <BarChart2 className="h-5 w-5" /> },
+  { key: "multiBranch",    label: "Multi-Branch",      description: "Manage multiple branches/locations", icon: <Building2 className="h-5 w-5" /> },
 ];
 
 // ─── Per-tenant feature state ─────────────────────────────────────────────────
@@ -106,7 +106,7 @@ export default function FeatureFlagsPage() {
         <div className="w-64 shrink-0" />
         {FEATURES.map(f => (
           <div key={f.key} className="flex-1 min-w-[100px] text-center">
-            <p className="text-lg">{f.icon}</p>
+            <div className="flex justify-center text-gray-600 mb-0.5">{f.icon}</div>
             <p className="text-xs font-semibold text-gray-700 leading-tight">{f.label}</p>
           </div>
         ))}
@@ -164,8 +164,8 @@ export default function FeatureFlagsPage() {
                         )}
                       >
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-gray-700 leading-tight">
-                            {feature.icon} {feature.label}
+                          <p className="text-xs font-semibold text-gray-700 leading-tight flex items-center gap-1.5">
+                            <span className="text-gray-500 shrink-0">{feature.icon}</span>{feature.label}
                           </p>
                         </div>
                         {isSaving ? (

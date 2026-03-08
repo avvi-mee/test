@@ -1,6 +1,7 @@
 "use client";
 
-import { Eye, Send, Download, Trash2, Loader2, CheckCircle } from "lucide-react";
+import type { ReactNode } from "react";
+import { Eye, Send, Download, Trash2, Loader2, CheckCircle, User, HardHat, Wrench, Package } from "lucide-react";
 import { ContractStatusBadge } from "./ContractStatusBadge";
 import type { Contract, ContractType } from "@/types/contracts";
 
@@ -8,12 +9,12 @@ const CONTRACT_TYPE_CONFIG: Record<ContractType, {
   label: string;
   topBorder: string;
   pill: string;
-  icon: string;
+  icon: ReactNode;
 }> = {
-  client:     { label: "CLIENT",     topBorder: "border-t-[#4B56D2]", pill: "bg-[#EEF2FF] text-[#4B56D2]",   icon: "👤" },
-  employee:   { label: "EMPLOYEE",   topBorder: "border-t-[#1A7A47]", pill: "bg-[#EDFBF3] text-[#1A7A47]",   icon: "👷" },
-  contractor: { label: "CONTRACTOR", topBorder: "border-t-[#A0700A]", pill: "bg-[#FFF8E8] text-[#A0700A]",   icon: "🔧" },
-  vendor:     { label: "VENDOR",     topBorder: "border-t-[#6B4FBB]", pill: "bg-[#F3F0FF] text-[#6B4FBB]",   icon: "📦" },
+  client:     { label: "CLIENT",     topBorder: "border-t-[#4B56D2]", pill: "bg-[#EEF2FF] text-[#4B56D2]",   icon: <User className="h-2.5 w-2.5" /> },
+  employee:   { label: "EMPLOYEE",   topBorder: "border-t-[#1A7A47]", pill: "bg-[#EDFBF3] text-[#1A7A47]",   icon: <HardHat className="h-2.5 w-2.5" /> },
+  contractor: { label: "CONTRACTOR", topBorder: "border-t-[#A0700A]", pill: "bg-[#FFF8E8] text-[#A0700A]",   icon: <Wrench className="h-2.5 w-2.5" /> },
+  vendor:     { label: "VENDOR",     topBorder: "border-t-[#6B4FBB]", pill: "bg-[#F3F0FF] text-[#6B4FBB]",   icon: <Package className="h-2.5 w-2.5" /> },
 };
 
 interface ContractCardProps {

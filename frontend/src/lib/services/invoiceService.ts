@@ -12,6 +12,16 @@ import {
 
 export type AgingBucketLabel = "current" | "31-60" | "61-90" | "90+";
 
+export interface InvoiceLineItem {
+  description: string;
+  quantity: number;
+  unit?: string;
+  unitRate: number;
+  amount: number;
+}
+
+export type InvoiceType = "advance" | "progress" | "final";
+
 export interface Invoice {
   id: string;
   tenantId: string;
@@ -20,11 +30,16 @@ export interface Invoice {
   clientName: string;
   invoiceNumber: string;
   amount: number;
+  lineItems?: InvoiceLineItem[];
+  gstPercent?: number;
+  gstAmount?: number;
+  type?: InvoiceType;
   dueDate: any;
   status: "draft" | "sent" | "partial" | "paid" | "overdue";
   paidAmount: number;
   agingBucket?: AgingBucketLabel;
   description?: string;
+  pdfUrl?: string;
   createdAt: any;
   updatedAt?: any;
   paidAt?: any;
@@ -71,11 +86,16 @@ export function mapRowToInvoice(id: string, data: any): Invoice {
     clientName: data.clientName || "",
     invoiceNumber: data.invoiceNumber || "",
     amount: Number(data.amount) || 0,
+    lineItems: data.lineItems || undefined,
+    gstPercent: data.gstPercent !== undefined ? Number(data.gstPercent) : undefined,
+    gstAmount: data.gstAmount !== undefined ? Number(data.gstAmount) : undefined,
+    type: data.type || undefined,
     dueDate: data.dueDate,
     status: data.status || "draft",
     paidAmount: Number(data.paidAmount) || 0,
     agingBucket: "current" as AgingBucketLabel,
     description: data.notes || data.description,
+    pdfUrl: data.pdfUrl || undefined,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
     paidAt: data.paidAt,
@@ -105,6 +125,10 @@ export async function createInvoice(
     clientEmail: string;    // customer email — used by /api/my-invoices for email-based filtering
     clientName: string;
     amount: number;
+    lineItems?: InvoiceLineItem[];
+    gstPercent?: number;
+    gstAmount?: number;
+    type?: InvoiceType;
     dueDate: Date;
     description?: string;
   }
@@ -132,6 +156,10 @@ export async function createInvoice(
       clientName: data.clientName,
       invoiceNumber,
       amount: data.amount,
+      lineItems: data.lineItems || null,
+      gstPercent: data.gstPercent ?? null,
+      gstAmount: data.gstAmount ?? null,
+      type: data.type || null,
       paidAmount: 0,
       balance: data.amount,
       dueDate: data.dueDate.toISOString().split("T")[0],

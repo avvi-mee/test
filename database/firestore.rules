@@ -47,6 +47,20 @@ service cloud.firestore {
       return isTenantOwner(tenantId) || isTenantEmployee(tenantId) || isSuperAdmin();
     }
 
+    // Role helpers — supports both legacy `role: string` and current `roles: string[]`
+    function getEmployeeRoles(tenantId) {
+      let emp = get(/databases/$(database)/documents/tenants/$(tenantId)/employees/$(request.auth.uid)).data;
+      return emp.roles != null ? emp.roles : [emp.role];
+    }
+
+    function hasRole(tenantId, role) {
+      return isAuthenticated() && isTenantEmployee(tenantId) && getEmployeeRoles(tenantId).hasAny([role]);
+    }
+
+    function isTenantAdmin(tenantId) {
+      return isAuthenticated() && (isTenantOwner(tenantId) || (isTenantEmployee(tenantId) && getEmployeeRoles(tenantId).hasAny(['owner', 'admin'])));
+    }
+
     // ========================================
     // Users Collection
     // ========================================
@@ -176,9 +190,11 @@ service cloud.firestore {
         allow create: if isTenantMember(tenantId);
       }
 
-      // Projects — tenant members + customer (own projects)
+      // Projects — tenant members + customer (own projects) + client portal
       match /projects/{projectId} {
-        allow read: if isTenantMember(tenantId) || (isAuthenticated() && resource.data.customerId == request.auth.uid);
+        allow read: if isTenantMember(tenantId)
+                    || (isAuthenticated() && resource.data.customerId == request.auth.uid)
+                    || (isAuthenticated() && resource.data.clientAuthUid == request.auth.uid);
         allow create: if isTenantMember(tenantId);
         allow update: if isTenantMember(tenantId);
 
@@ -195,6 +211,26 @@ service cloud.firestore {
         match /tasks/{taskId} {
           allow read: if isTenantMember(tenantId);
           allow write: if isTenantMember(tenantId);
+        }
+
+        // Project files — tenant members + client (own project, visible files only)
+        match /files/{fileId} {
+          allow read: if isTenantMember(tenantId)
+                      || (isAuthenticated()
+                          && get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.clientAuthUid == request.auth.uid
+                          && resource.data.visibleToClient == true);
+          allow write: if isTenantMember(tenantId);
+        }
+
+        // Client queries — tenant members read all; client can read/create for own project
+        match /queries/{queryId} {
+          allow read: if isTenantMember(tenantId)
+                      || (isAuthenticated()
+                          && get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.clientAuthUid == request.auth.uid);
+          allow create: if isAuthenticated()
+                        && get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.clientAuthUid == request.auth.uid
+                        && request.resource.data.clientAuthUid == request.auth.uid;
+          allow update: if isTenantMember(tenantId); // PM can respond
         }
       }
 
@@ -248,10 +284,16 @@ service cloud.firestore {
         allow write: if isTenantOwner(tenantId);
       }
 
-      // Client Accounts — owner can manage, client can read their own
+      // Client Accounts — tenant members can read, client can read their own, owner manages
       match /clientAccounts/{clientId} {
-        allow read: if isTenantOwner(tenantId) || isOwner(clientId);
+        allow read: if isTenantMember(tenantId) || request.auth.uid == clientId;
         allow write: if isTenantOwner(tenantId);
+      }
+
+      // Contract Templates — tenant members only
+      match /contractTemplates/{templateId} {
+        allow read: if isTenantMember(tenantId);
+        allow write: if isTenantMember(tenantId);
       }
 
       // Contracts — tenant members

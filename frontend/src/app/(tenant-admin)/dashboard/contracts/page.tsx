@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,6 +41,13 @@ import {
   Loader2,
   FileText,
   ChevronDown,
+  User,
+  HardHat,
+  Wrench,
+  Package,
+  CheckCircle,
+  Clock,
+  PenLine,
 } from "lucide-react";
 
 // ── Static Config ─────────────────────────────────────────────────────────────
@@ -48,12 +55,12 @@ import {
 const CONTRACT_TYPE_CONFIG: Record<ContractType, {
   label: string;
   pill: string;
-  icon: string;
+  icon: ReactNode;
 }> = {
-  client:     { label: "CLIENT",     pill: "bg-[#EEF2FF] text-[#4B56D2]",   icon: "👤" },
-  employee:   { label: "EMPLOYEE",   pill: "bg-[#EDFBF3] text-[#1A7A47]",   icon: "👷" },
-  contractor: { label: "CONTRACTOR", pill: "bg-[#FFF8E8] text-[#A0700A]",   icon: "🔧" },
-  vendor:     { label: "VENDOR",     pill: "bg-[#F3F0FF] text-[#6B4FBB]",   icon: "📦" },
+  client:     { label: "CLIENT",     pill: "bg-[#EEF2FF] text-[#4B56D2]",   icon: <User className="h-2.5 w-2.5" /> },
+  employee:   { label: "EMPLOYEE",   pill: "bg-[#EDFBF3] text-[#1A7A47]",   icon: <HardHat className="h-2.5 w-2.5" /> },
+  contractor: { label: "CONTRACTOR", pill: "bg-[#FFF8E8] text-[#A0700A]",   icon: <Wrench className="h-2.5 w-2.5" /> },
+  vendor:     { label: "VENDOR",     pill: "bg-[#F3F0FF] text-[#6B4FBB]",   icon: <Package className="h-2.5 w-2.5" /> },
 };
 
 const TYPE_FILTER_TABS = [
@@ -75,11 +82,11 @@ const STATUS_FILTER_TABS = [
 
 // ── New Contract dropdown items ────────────────────────────────────────────────
 
-const CREATE_OPTIONS: { type: ContractType; label: string; icon: string }[] = [
-  { type: "client",     label: "Client Contract",     icon: "👤" },
-  { type: "employee",   label: "Employee Contract",   icon: "👷" },
-  { type: "contractor", label: "Contractor Agreement", icon: "🔧" },
-  { type: "vendor",     label: "Vendor Agreement",    icon: "📦" },
+const CREATE_OPTIONS: { type: ContractType; label: string; icon: ReactNode }[] = [
+  { type: "client",     label: "Client Contract",     icon: <User className="h-4 w-4" /> },
+  { type: "employee",   label: "Employee Contract",   icon: <HardHat className="h-4 w-4" /> },
+  { type: "contractor", label: "Contractor Agreement", icon: <Wrench className="h-4 w-4" /> },
+  { type: "vendor",     label: "Vendor Agreement",    icon: <Package className="h-4 w-4" /> },
 ];
 
 // ── Table View ────────────────────────────────────────────────────────────────
@@ -386,16 +393,16 @@ export default function ContractsPage() {
       {/* STATS ROW */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Total Contracts", value: stats.total, icon: "📄" },
-          { label: "Active", value: stats.active, icon: "✅" },
-          { label: "Awaiting Signature", value: stats.awaitingSignature, icon: "✍️" },
-          { label: "Expiring in 30 Days", value: stats.expiring, icon: "⏳" },
+          { label: "Total Contracts", value: stats.total, icon: <FileText className="h-5 w-5" style={{ color: "var(--brand)" }} /> },
+          { label: "Active", value: stats.active, icon: <CheckCircle className="h-5 w-5 text-emerald-500" /> },
+          { label: "Awaiting Signature", value: stats.awaitingSignature, icon: <PenLine className="h-5 w-5 text-amber-500" /> },
+          { label: "Expiring in 30 Days", value: stats.expiring, icon: <Clock className="h-5 w-5 text-red-500" /> },
         ].map((s) => (
           <div
             key={s.label}
             className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex items-center gap-3"
           >
-            <span className="text-xl">{s.icon}</span>
+            <span className="flex items-center justify-center">{s.icon}</span>
             <div>
               <p className="text-xs text-gray-400">{s.label}</p>
               <p className="font-bold text-gray-900 text-lg">{s.value}</p>

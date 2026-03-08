@@ -1,9 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { getDb } from "@/lib/firebase";
-import { getFirebaseStorage } from "@/lib/firebase";
+import { getDb, getFirebaseAuth } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 interface EstimateData {
     customerInfo: {
@@ -312,25 +310,32 @@ export async function generateEstimatePDF(
 
         let pdfUrl: string | undefined;
 
-        // Upload to Firebase Storage if enabled
+        // Upload to local storage if enabled
         if (options.uploadToStorage) {
             try {
-                const storage = getFirebaseStorage();
                 const pdfBlob = pdf.output("blob");
-                const storagePath = `estimates/${estimateId}.pdf`;
-                const storageRef = ref(storage, storagePath);
+                const pdfFile = new File([pdfBlob], `${estimateId}.pdf`, { type: "application/pdf" });
+                const formData = new FormData();
+                formData.append("file", pdfFile);
+                formData.append("tenantId", estimateData.tenantId);
+                formData.append("folder", "estimates");
 
-                await uploadBytes(storageRef, pdfBlob, {
-                    contentType: "application/pdf",
+                const auth = getFirebaseAuth();
+                const token = await auth.currentUser?.getIdToken();
+                const res = await fetch("/api/upload", {
+                    method: "POST",
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                    body: formData,
                 });
 
-                pdfUrl = await getDownloadURL(storageRef);
-
-                // Update the estimate record with pdfUrl
-                const estimateDocRef = doc(db, `tenants/${estimateData.tenantId}/estimates`, estimateId);
-                await updateDoc(estimateDocRef, { pdf_url: pdfUrl });
+                if (res.ok) {
+                    const data = await res.json();
+                    pdfUrl = data.url;
+                    const estimateDocRef = doc(db, `tenants/${estimateData.tenantId}/estimates`, estimateId);
+                    await updateDoc(estimateDocRef, { pdf_url: pdfUrl });
+                }
             } catch (uploadError) {
-                console.error("Error uploading PDF to storage:", uploadError);
+                console.error("Error uploading PDF:", uploadError);
                 // Continue with download even if upload fails
             }
         }

@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
                                 <td style="padding: 12px 0; color: #64748B; font-size: 14px;
                                            border-bottom: 1px solid #F1F5F9;">Phone</td>
                                 <td style="padding: 12px 0; color: #0F172A; font-weight: 600;
-                                           border-bottom: 1px solid #F1F5F9;">${phone ? (phone.startsWith('+') ? phone : '+91 ' + phone) : '—'}</td>
+                                           border-bottom: 1px solid #F1F5F9;">${phone ? (phone.startsWith('+91') ? phone : phone.startsWith('+') ? phone : '+91 ' + phone) : '—'}</td>
                             </tr>
                             <tr>
                                 <td style="padding: 12px 0; color: #64748B; font-size: 14px;

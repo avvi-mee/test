@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { ReactNode } from "react";
 import {
   X,
   Loader2,
@@ -10,6 +11,10 @@ import {
   CheckCircle,
   AlertTriangle,
   RotateCcw,
+  User,
+  HardHat,
+  Wrench,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -46,11 +51,11 @@ function statusIndex(s: ContractStatus): number {
 
 // ── Type config ───────────────────────────────────────────────────────────────
 
-const TYPE_CONFIG: Record<ContractType, { label: string; pill: string; icon: string }> = {
-  client:     { label: "CLIENT",     pill: "bg-[#EEF2FF] text-[#4B56D2]",   icon: "👤" },
-  employee:   { label: "EMPLOYEE",   pill: "bg-[#EDFBF3] text-[#1A7A47]",   icon: "👷" },
-  contractor: { label: "CONTRACTOR", pill: "bg-[#FFF8E8] text-[#A0700A]",   icon: "🔧" },
-  vendor:     { label: "VENDOR",     pill: "bg-[#F3F0FF] text-[#6B4FBB]",   icon: "📦" },
+const TYPE_CONFIG: Record<ContractType, { label: string; pill: string; icon: ReactNode }> = {
+  client:     { label: "CLIENT",     pill: "bg-[#EEF2FF] text-[#4B56D2]",   icon: <User className="h-2.5 w-2.5" /> },
+  employee:   { label: "EMPLOYEE",   pill: "bg-[#EDFBF3] text-[#1A7A47]",   icon: <HardHat className="h-2.5 w-2.5" /> },
+  contractor: { label: "CONTRACTOR", pill: "bg-[#FFF8E8] text-[#A0700A]",   icon: <Wrench className="h-2.5 w-2.5" /> },
+  vendor:     { label: "VENDOR",     pill: "bg-[#F3F0FF] text-[#6B4FBB]",   icon: <Package className="h-2.5 w-2.5" /> },
 };
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────

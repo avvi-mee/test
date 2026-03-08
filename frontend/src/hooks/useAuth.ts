@@ -152,8 +152,8 @@ export function useAuth() {
         return;
       }
 
-      // --- Admin / Tenant owner ---
-      if (dbRole === "admin" || !dbRole) {
+      // --- Admin / Tenant owner / Employee ---
+      if (dbRole === "admin" || dbRole === "employee" || !dbRole) {
         const email = authUser.email || "";
         const cached = getCachedTenant(email);
 
@@ -186,7 +186,6 @@ export function useAuth() {
             loading: false,
             error: "",
           });
-          // Backfill slug if missing (fire-and-forget, don't block auth)
           if (!tenant.slug) {
             ensureTenantSlug(tenant.id, tenant.name).then((slug) => {
               tenant.slug = slug;
@@ -200,7 +199,7 @@ export function useAuth() {
           return;
         }
 
-        // Fallback: look up tenant by tenant_id from users doc
+        // Fallback: look up tenant by tenantId from users doc (covers admin + employee roles)
         if (userData?.tenantId || userData?.tenant_id) {
           const tid = userData.tenantId || userData.tenant_id;
           const tenantDoc = await getDoc(doc(db, "tenants", tid));
@@ -215,7 +214,6 @@ export function useAuth() {
               loading: false,
               error: "",
             });
-            // Backfill slug if missing (fire-and-forget)
             if (!tenant.slug) {
               ensureTenantSlug(tenant.id, tenant.name).then((slug) => {
                 tenant.slug = slug;
@@ -326,10 +324,33 @@ export function useAuth() {
         }
       }
 
+      // Try employee login as final fallback
+      if (!tenantData) {
+        try {
+          const idToken = await cred.user.getIdToken();
+          const res = await fetch("/api/auth/employee-login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken }),
+          });
+          if (res.ok) {
+            const { employee } = await res.json();
+            if (employee?.tenantId) {
+              const tenantDoc = await getDoc(doc(db, "tenants", employee.tenantId));
+              if (tenantDoc.exists()) {
+                tenantData = docToTenant(tenantDoc.id, tenantDoc.data());
+              }
+            }
+          }
+        } catch (_) {
+          // ignore network errors — will fall through to error below
+        }
+      }
+
       if (!tenantData) {
         setState((prev) => ({
           ...prev,
-          error: "No designer account found with this email",
+          error: "No account found with this email. Contact your admin.",
           loading: false,
         }));
         await firebaseSignOut(auth);

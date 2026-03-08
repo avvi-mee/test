@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getDb } from "@/lib/firebase";
 import { type User } from "firebase/auth";
-import { doc, getDoc, getDocs, collection, query, where } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, query, where, limit } from "firebase/firestore";
 import { can as canCheck, PermissionAction } from "@/lib/permissions";
 import { useAuth } from "./useAuth";
 
@@ -46,9 +46,15 @@ async function resolveUserFromDb(user: User): Promise<ResolvedUser> {
   // First check if user doc has tenantId
   const tid = userData?.tenantId || userData?.tenant_id;
   if (tid) {
-    const empDoc = await getDoc(doc(db, "tenants", tid, "employees", user.uid));
-    if (empDoc.exists()) {
-      const empData = empDoc.data();
+    let empSnap: any = await getDoc(doc(db, "tenants", tid, "employees", user.uid));
+    if (!empSnap.exists()) {
+      const q = await getDocs(
+        query(collection(db, "tenants", tid, "employees"), where("userId", "==", user.uid), limit(1))
+      );
+      if (!q.empty) empSnap = q.docs[0];
+    }
+    if (empSnap.exists()) {
+      const empData = empSnap.data();
       if (empData.isActive !== false) {
         const empRoles =
           empData.roles && empData.roles.length > 0
@@ -58,7 +64,7 @@ async function resolveUserFromDb(user: User): Promise<ResolvedUser> {
           userType: "employee",
           tenantId: tid,
           roles: Array.isArray(empRoles) ? empRoles : [empRoles],
-          employeeId: empDoc.id,
+          employeeId: empSnap.id,
         };
       }
     }

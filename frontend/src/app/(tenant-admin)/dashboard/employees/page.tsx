@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useContracts } from "@/hooks/useContracts";
 import { CreateEmployeeContractDrawer } from "@/components/dashboard/contracts/CreateEmployeeContractDrawer";
 import { ContractDetailDrawer } from "@/components/dashboard/contracts/ContractDetailDrawer";
@@ -27,13 +27,12 @@ import {
 import { useTenantAuth } from "@/hooks/useTenantAuth";
 import { useTeam, type TeamMember } from "@/hooks/useTeam";
 import { useLeads } from "@/hooks/useLeads";
+import type { EmployeeRole } from "@/types";
 import { getFirebaseAuth } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
   Search,
-  LayoutGrid,
-  List,
   Edit,
   KeyRound,
   Trash2,
@@ -44,56 +43,67 @@ import {
   Check,
   Copy,
   Loader2,
-  MapPin,
-  Phone,
-  Mail,
   Users,
   FileSignature,
+  Crown,
+  Zap,
+  Target,
+  Pen,
+  HardHat,
+  BarChart2,
+  ClipboardList,
 } from "lucide-react";
 
 // ─── Static Config ───────────────────────────────────────────────────────────
 
 const ROLE_CONFIG: Record<
   string,
-  { icon: string; label: string; pill: string; topBorder: string; avatar: string }
+  { icon: ReactNode; label: string; pill: string; topBorder: string; avatar: string }
 > = {
   owner: {
-    icon: "👑",
+    icon: <Crown className="h-2.5 w-2.5" />,
     label: "OWNER",
     pill: "bg-[#FFF8E8] text-[#A0700A]",
     topBorder: "border-t-[2px] border-[#A0700A]",
     avatar: "from-amber-400 to-orange-500",
   },
+  admin: {
+    icon: <Zap className="h-2.5 w-2.5" />,
+    label: "ADMIN",
+    pill: "bg-[#FFF3E0] text-[#C26700]",
+    topBorder: "border-t-[2px] border-[#C26700]",
+    avatar: "from-orange-400 to-amber-500",
+  },
   sales: {
-    icon: "🎯",
+    icon: <Target className="h-2.5 w-2.5" />,
     label: "SALES",
     pill: "bg-[#EEF2FF] text-[#4B56D2]",
     topBorder: "border-t-[2px] border-[#4B56D2]",
     avatar: "from-indigo-400 to-violet-500",
   },
   designer: {
-    icon: "✏️",
+    icon: <Pen className="h-2.5 w-2.5" />,
     label: "DESIGNER",
     pill: "bg-[#EDFBF3] text-[#1A7A47]",
     topBorder: "border-t-[2px] border-[#1A7A47]",
     avatar: "from-emerald-400 to-teal-500",
   },
   site_supervisor: {
-    icon: "🏗️",
+    icon: <HardHat className="h-2.5 w-2.5" />,
     label: "SITE SUPERVISOR",
     pill: "bg-[#E8F4FD] text-[#1D6FA4]",
     topBorder: "border-t-[2px] border-[#1D6FA4]",
     avatar: "from-sky-400 to-blue-500",
   },
   accountant: {
-    icon: "📊",
+    icon: <BarChart2 className="h-2.5 w-2.5" />,
     label: "ACCOUNTANT",
     pill: "bg-[#F3F0FF] text-[#6B4FBB]",
     topBorder: "border-t-[2px] border-[#6B4FBB]",
     avatar: "from-violet-400 to-purple-500",
   },
   project_manager: {
-    icon: "📋",
+    icon: <ClipboardList className="h-2.5 w-2.5" />,
     label: "PROJECT MANAGER",
     pill: "bg-[#FDF0F8] text-[#9B2158]",
     topBorder: "border-t-[2px] border-[#9B2158]",
@@ -102,15 +112,17 @@ const ROLE_CONFIG: Record<
 };
 
 const FILTER_TABS = [
-  { value: "all", label: "All" },
-  { value: "sales", label: "Sales" },
-  { value: "designer", label: "Designer" },
+  { value: "all",             label: "All"             },
+  { value: "admin",           label: "Admin"           },
+  { value: "sales",           label: "Sales"           },
+  { value: "designer",        label: "Designer"        },
   { value: "site_supervisor", label: "Site Supervisor" },
-  { value: "accountant", label: "Accountant" },
+  { value: "accountant",      label: "Accountant"      },
   { value: "project_manager", label: "Project Manager" },
 ];
 
 const ROLE_OPTIONS = [
+  "admin",
   "sales",
   "designer",
   "site_supervisor",
@@ -130,120 +142,6 @@ function getInitials(name: string): string {
 function getPrimaryRole(member: TeamMember): string {
   if (member.isOwner) return "owner";
   return member.roles[0] ?? "sales";
-}
-
-// ─── EmployeeCard ────────────────────────────────────────────────────────────
-
-function EmployeeCard({
-  member,
-  leadCount,
-  empContract,
-  onEdit,
-  onAccess,
-  onDelete,
-  onContract,
-  onViewContract,
-}: {
-  member: TeamMember;
-  leadCount: number;
-  empContract?: Contract | null;
-  onEdit: () => void;
-  onAccess: () => void;
-  onDelete: () => void;
-  onContract: () => void;
-  onViewContract: (c: Contract) => void;
-}) {
-  const primaryRole = getPrimaryRole(member);
-  const roleConf = ROLE_CONFIG[primaryRole] ?? ROLE_CONFIG.sales;
-
-  return (
-    <div className={`group relative bg-white rounded-[14px] border border-[rgba(0,0,0,0.08)] overflow-hidden hover:border-[rgba(0,0,0,0.16)] hover:shadow-[var(--shadow-hover)] transition-all duration-200 ${roleConf.topBorder}`}>
-      {/* Body */}
-      <div className="px-4 pt-4 pb-12">
-        <div className="flex items-start gap-3 mb-3">
-          <div
-            className={`h-12 w-12 rounded-full bg-gradient-to-br ${roleConf.avatar} flex items-center justify-center text-white font-bold text-base shrink-0`}
-          >
-            {getInitials(member.fullName || "?")}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="font-bold text-[#0A0A0A] text-[15px] leading-tight truncate">
-                {member.fullName}
-              </h3>
-              <span
-                className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${roleConf.pill}`}
-              >
-                {roleConf.label}
-              </span>
-            </div>
-            {member.phone && (
-              <p className="text-[12px] text-[#8A8A8A] flex items-center gap-1 mt-1">
-                <Phone className="h-3 w-3" />
-                {member.phone}
-              </p>
-            )}
-            <p className="text-[12px] text-[#8A8A8A] flex items-center gap-1 mt-0.5 truncate">
-              <Mail className="h-3 w-3 shrink-0" />
-              {member.email}
-            </p>
-          </div>
-        </div>
-        {member.area && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-black/[0.04] text-[#8A8A8A] rounded text-[11px]">
-            <MapPin className="h-3 w-3" />
-            {member.area}
-          </span>
-        )}
-        <div className="flex items-center gap-3 mt-2 text-[12px] text-[#8A8A8A]">
-          <span>{leadCount} lead{leadCount !== 1 ? "s" : ""}</span>
-          <span>·</span>
-          <span className={`flex items-center gap-1 ${member.isActive ? "text-[#1A7A47]" : "text-[#8A8A8A]"}`}>
-            <span className={`inline-block h-1.5 w-1.5 rounded-full ${member.isActive ? "bg-[#1A7A47]" : "bg-[#C8C8C8]"}`} />
-            {member.isActive ? "Active" : "Inactive"}
-          </span>
-        </div>
-      </div>
-      {/* Hover action bar */}
-      <div className="absolute bottom-0 left-0 right-0 flex border-t border-black/[0.06] bg-white/95 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={onEdit}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#3D3D3D] hover:bg-black/[0.03] transition-colors"
-        >
-          <Edit className="h-3.5 w-3.5" /> Edit
-        </button>
-        <button
-          onClick={onAccess}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#A0700A] hover:bg-[#FFF8E8] transition-colors border-x border-black/[0.06]"
-        >
-          <KeyRound className="h-3.5 w-3.5" /> Access
-        </button>
-        {empContract ? (
-          <button
-            onClick={() => onViewContract(empContract)}
-            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-xs text-[#4B56D2] hover:bg-[#EEF2FF] transition-colors border-x border-black/[0.06]"
-          >
-            <FileSignature className="h-3.5 w-3.5" />
-            <ContractStatusBadge status={empContract.status} showDot={false} className="text-[9px]" />
-          </button>
-        ) : (
-          <button
-            onClick={onContract}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#8A8A8A] hover:text-[#4B56D2] hover:bg-[#EEF2FF] transition-colors border-x border-black/[0.06]"
-          >
-            <FileSignature className="h-3.5 w-3.5" /> Contract
-          </button>
-        )}
-        <button
-          onClick={onDelete}
-          disabled={member.isOwner}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#B83232] hover:bg-[#FFF0F0] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Trash2 className="h-3.5 w-3.5" /> Remove
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // ─── TableView ───────────────────────────────────────────────────────────────
@@ -307,11 +205,22 @@ function TableView({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span
-                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${roleConf.pill}`}
-                  >
-                    {roleConf.label}
-                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {m.isOwner && (
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${ROLE_CONFIG.owner.pill}`}>
+                        {ROLE_CONFIG.owner.icon} {ROLE_CONFIG.owner.label}
+                      </span>
+                    )}
+                    {m.roles.map((r) => {
+                      const rc = ROLE_CONFIG[r];
+                      if (!rc) return null;
+                      return (
+                        <span key={r} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${rc.pill}`}>
+                          {rc.icon} {rc.label}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </TableCell>
                 <TableCell className="text-sm text-gray-600">
                   {m.phone || "—"}
@@ -411,7 +320,7 @@ type FormState = {
   email: string;
   phone: string;
   area: string;
-  roles: string[];
+  roles: EmployeeRole[];
 };
 
 function AddEditDrawer({
@@ -434,11 +343,11 @@ function AddEditDrawer({
   onClose: () => void;
 }) {
   const toggleRole = (role: string) => {
-    if (form.roles.includes(role)) {
+    if ((form.roles as string[]).includes(role)) {
       if (form.roles.length === 1) return; // must keep at least one
-      setForm((f) => ({ ...f, roles: f.roles.filter((r) => r !== role) }));
+      setForm((f) => ({ ...f, roles: f.roles.filter((r) => r !== role) as EmployeeRole[] }));
     } else {
-      setForm((f) => ({ ...f, roles: [...f.roles, role] }));
+      setForm((f) => ({ ...f, roles: [...f.roles, role as EmployeeRole] }));
     }
   };
 
@@ -544,6 +453,9 @@ function AddEditDrawer({
                   </button>
                 );
               })}
+              <p className="text-[11px] text-gray-400 mt-1.5 leading-snug">
+                This person will see sections for all their selected roles in their dashboard.
+              </p>
             </div>
           </div>
 
@@ -856,8 +768,7 @@ export default function EmployeesPage() {
     useTeam(tenantId);
   const { leads } = useLeads(tenantId);
 
-  // View & filter
-  const [view, setView] = useState<"cards" | "table">("cards");
+  // Filter
   const [roleFilter, setRoleFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -916,7 +827,7 @@ export default function EmployeesPage() {
       members.filter((m) => {
         if (
           roleFilter !== "all" &&
-          !m.roles.includes(roleFilter) &&
+          !(m.roles as string[]).includes(roleFilter) &&
           !(roleFilter === "owner" && m.isOwner)
         )
           return false;
@@ -934,21 +845,9 @@ export default function EmployeesPage() {
     [members, roleFilter, searchQuery]
   );
 
-  const activeCount = members.filter((m) => m.isActive).length;
-  const totalLeads = leads.filter((l) => !!l.assignedTo).length;
-
-  const roleBreakdown = useMemo(() => {
-    const parts: string[] = [];
-    ["sales", "designer", "site_supervisor"].forEach((r) => {
-      const c = members.filter((m) => m.roles.includes(r)).length;
-      if (c) parts.push(`${c} ${ROLE_CONFIG[r].label}`);
-    });
-    return parts.join(", ") || "No roles";
-  }, [members]);
-
   // Handlers
   const openAdd = () => {
-    setForm({ fullName: "", email: "", phone: "", area: "", roles: ["sales"] });
+    setForm({ fullName: "", email: "", phone: "", area: "", roles: ["sales" as const] });
     setIsAddOpen(true);
   };
 
@@ -995,7 +894,7 @@ export default function EmployeesPage() {
         });
         toast({
           title: "Employee added",
-          description: "Use the 🔑 key icon to grant login access.",
+          description: "Use the key icon to grant login access.",
         });
         setIsAddOpen(false);
       }
@@ -1065,25 +964,10 @@ export default function EmployeesPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <div className="h-7 w-36 bg-gray-200 rounded-lg animate-pulse" />
-            <div className="h-4 w-56 bg-gray-100 rounded animate-pulse" />
-          </div>
+          <div className="h-7 w-36 bg-gray-200 rounded-lg animate-pulse" />
           <div className="h-9 w-32 bg-gray-200 rounded-lg animate-pulse" />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-52 bg-gray-100 rounded-2xl animate-pulse"
-            />
-          ))}
-        </div>
+        <div className="h-64 bg-gray-100 rounded-xl animate-pulse" />
       </div>
     );
   }
@@ -1100,37 +984,12 @@ export default function EmployeesPage() {
             </span>
           </h1>
         </div>
-        <div className="flex items-center gap-3">
-          {/* View toggle */}
-          <div className="flex items-center border border-black/[0.08] rounded-lg p-0.5 gap-0.5 bg-white">
-            <button
-              onClick={() => setView("cards")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                view === "cards"
-                  ? "bg-[#0A0A0A] text-white"
-                  : "text-[#8A8A8A] hover:text-[#0A0A0A]"
-              }`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" /> Cards
-            </button>
-            <button
-              onClick={() => setView("table")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                view === "table"
-                  ? "bg-[#0A0A0A] text-white"
-                  : "text-[#8A8A8A] hover:text-[#0A0A0A]"
-              }`}
-            >
-              <List className="h-3.5 w-3.5" /> Table
-            </button>
-          </div>
-          <Button
-            onClick={openAdd}
-            className="bg-[#0A0A0A] text-white hover:bg-[#1A1A1A] gap-1.5"
-          >
-            <Plus className="h-4 w-4" /> Add Member
-          </Button>
-        </div>
+        <Button
+          onClick={openAdd}
+          className="bg-[#0A0A0A] text-white hover:bg-[#1A1A1A] gap-1.5"
+        >
+          <Plus className="h-4 w-4" /> Add Member
+        </Button>
       </div>
 
       {/* 2. FILTER TABS + SEARCH */}
@@ -1161,41 +1020,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* 3. STATS ROW */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {(
-          [
-            { label: "Total", value: members.length, icon: "👥", small: false },
-            { label: "Active Now", value: activeCount, icon: "✅", small: false },
-            { label: "Roles", value: roleBreakdown, icon: "🏷️", small: true },
-            {
-              label: "Leads Assigned",
-              value: totalLeads,
-              icon: "📋",
-              small: false,
-            },
-          ] as const
-        ).map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex items-center gap-3"
-          >
-            <span className="text-xl">{stat.icon}</span>
-            <div>
-              <p className="text-xs text-gray-400">{stat.label}</p>
-              <p
-                className={`font-bold text-gray-900 ${
-                  stat.small ? "text-sm leading-tight" : "text-lg"
-                }`}
-              >
-                {stat.value}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* 4. CONTENT */}
+      {/* 3. CONTENT */}
       {members.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
@@ -1230,22 +1055,6 @@ export default function EmployeesPage() {
           >
             Clear filters
           </button>
-        </div>
-      ) : view === "cards" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredMembers.map((m) => (
-            <EmployeeCard
-              key={m.id}
-              member={m}
-              leadCount={leadCountMap[m.userId] ?? 0}
-              empContract={contractByEmployeeId.get(m.id) ?? null}
-              onEdit={() => openEdit(m)}
-              onAccess={() => openAccess(m)}
-              onDelete={() => setDeleteMember(m)}
-              onContract={() => setCreateContractMember(m)}
-              onViewContract={(c) => setDetailContract(c)}
-            />
-          ))}
         </div>
       ) : (
         <TableView

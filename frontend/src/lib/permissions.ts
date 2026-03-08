@@ -171,6 +171,8 @@ const SIDEBAR_PERMISSION_MAP: SidebarPermission[] = [
   { href: "/dashboard/projects",               requiredPermission: "view_projects"     },
   { href: "/dashboard/client-portal",          requiredPermission: "view_client_portal"},
   { href: "/dashboard/finance",                requiredPermission: "view_finance"      },
+  { href: "/dashboard/finance/invoices",       requiredPermission: "view_finance"      },
+  { href: "/dashboard/finance/bills",          requiredPermission: "view_finance"      },
   { href: "/dashboard/invoices",               requiredPermission: "view_finance"      },
   { href: "/dashboard/vendor-bills",           requiredPermission: "view_finance"      },
   { href: "/dashboard/vendors",                requiredPermission: "view_vendors"      },

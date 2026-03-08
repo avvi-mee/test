@@ -229,15 +229,7 @@ export function useFinance(tenantId: string | null) {
 
   // Mutations
   const createInvoice = useCallback(
-    async (data: {
-      projectId: string;
-      clientId: string;
-      clientEmail: string;
-      clientName: string;
-      amount: number;
-      dueDate: Date;
-      description?: string;
-    }) => {
+    async (data: Parameters<typeof createInvoiceSvc>[1]) => {
       if (!tenantId) return;
       await createInvoiceSvc(tenantId, data);
       invalidate();
@@ -273,13 +265,7 @@ export function useFinance(tenantId: string | null) {
   );
 
   const createVendorBill = useCallback(
-    async (data: {
-      projectId: string;
-      vendorName: string;
-      amount: number;
-      dueDate: Date;
-      description?: string;
-    }) => {
+    async (data: Parameters<typeof createVendorBillSvc>[1]) => {
       if (!tenantId) return;
       await createVendorBillSvc(tenantId, data);
       invalidate();

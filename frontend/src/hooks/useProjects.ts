@@ -89,6 +89,9 @@ function mapProjectDoc(
     assignedDesigner: data.designerId,
     assignedSupervisor: data.supervisorId,
     assignedTo: data.managerId,
+    team: data.team ?? undefined,
+    clientAccessEmail: data.clientAccessEmail ?? null,
+    clientAuthUid: data.clientAuthUid ?? null,
     phases,
     startDate: data.startDate,
     expectedEndDate: data.targetEndDate,
@@ -302,7 +305,10 @@ function sendStatusNotification(payload: {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useProjects(tenantId: string | null) {
+export function useProjects(
+  tenantId: string | null,
+  options?: { employeeId?: string | null; roles?: string[] }
+) {
   const queryClient = useQueryClient();
   const qk = ["projects", tenantId] as const;
   const db = getDb();
@@ -371,6 +377,32 @@ export function useProjects(tenantId: string | null) {
     [queryClient, qk]
   );
 
+  // Role-filtered projects
+  const filteredProjects = useMemo(() => {
+    const { employeeId, roles = [] } = options ?? {};
+    if (!employeeId) return projects;
+    const hasRole = (r: string) => roles.includes(r);
+    if (hasRole("owner") || hasRole("admin") || hasRole("project_manager")) return projects;
+    if (hasRole("designer")) {
+      return projects.filter(
+        (p) =>
+          (p.team?.designerIds ?? []).includes(employeeId) ||
+          p.assignedDesigner === employeeId
+      );
+    }
+    if (hasRole("site_supervisor")) {
+      return projects.filter(
+        (p) =>
+          (p.team?.supervisorIds ?? []).includes(employeeId) ||
+          p.assignedSupervisor === employeeId
+      );
+    }
+    if (hasRole("accountant")) {
+      return projects.filter((p) => (p.team?.accountantIds ?? []).includes(employeeId));
+    }
+    return projects;
+  }, [projects, options]);
+
   // Stats derived via useMemo
   const stats = useMemo(() => {
     return {
@@ -393,6 +425,52 @@ export function useProjects(tenantId: string | null) {
       ),
     };
   }, [projects]);
+
+  // -----------------------------------------------------------------------
+  // createProject
+  // -----------------------------------------------------------------------
+  const createProject = useCallback(
+    async (data: {
+      projectName: string;
+      clientName: string;
+      clientEmail?: string;
+      clientPhone?: string;
+      clientCity?: string;
+      totalAmount?: number;
+      status?: Project["status"];
+      designerId?: string;
+      supervisorId?: string;
+      managerId?: string;
+    }) => {
+      if (!tenantId) return null;
+      try {
+        const db = getDb();
+        const ref = await addDoc(collection(db, `tenants/${tenantId}/projects`), {
+          tenantId,
+          name:           data.projectName,
+          clientName:     data.clientName,
+          clientEmail:    data.clientEmail    || null,
+          clientPhone:    data.clientPhone    || null,
+          clientCity:     data.clientCity     || null,
+          contractValue:  data.totalAmount    || 0,
+          status:         data.status         || "planning",
+          designerId:     data.designerId     || null,
+          supervisorId:   data.supervisorId   || null,
+          managerId:      data.managerId      || null,
+          progress:       0,
+          leadId:         null,
+          createdAt:      serverTimestamp(),
+          updatedAt:      serverTimestamp(),
+        });
+        invalidate();
+        return ref.id;
+      } catch (err) {
+        console.error("Error creating project:", err);
+        return null;
+      }
+    },
+    [tenantId, invalidate]
+  );
 
   // -----------------------------------------------------------------------
   // updateProject
@@ -791,8 +869,10 @@ export function useProjects(tenantId: string | null) {
 
   return {
     projects,
+    filteredProjects,
     stats,
     loading,
+    createProject,
     updateProject,
     updatePhase,
     updateTask,

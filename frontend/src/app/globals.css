@@ -34,9 +34,9 @@
   --bg-surface:   #FFFFFF;
 
   /* ── Glass & Mesh (light) ───────────────────────────────────────────── */
-  --mesh-1:    rgba(186,230,253,0.5);   /* sky-200 */
-  --mesh-2:    rgba(167,243,208,0.4);   /* emerald-200 */
-  --mesh-3:    rgba(221,214,254,0.45);  /* violet-200 */
+  --mesh-1:    rgba(200,200,200,0.18);  /* soft silver */
+  --mesh-2:    rgba(180,180,180,0.12);  /* lighter silver */
+  --mesh-3:    rgba(160,160,160,0.10);  /* faintest silver */
   --mesh-base: #F5F5F7;
 
   --glass:           rgba(255,255,255,0.78);
@@ -92,9 +92,9 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --mesh-1:    rgba(20,20,20,0.8);
-  --mesh-2:    rgba(15,15,15,0.7);
-  --mesh-3:    rgba(25,25,25,0.6);
+  --mesh-1:    rgba(60,60,60,0.55);    /* dark charcoal */
+  --mesh-2:    rgba(40,40,40,0.40);    /* deeper charcoal */
+  --mesh-3:    rgba(50,50,50,0.35);    /* mid charcoal */
   --mesh-base: #000000;
 
   --glass:           rgba(255,255,255,0.05);

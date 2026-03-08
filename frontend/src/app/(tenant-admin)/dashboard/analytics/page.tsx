@@ -17,6 +17,7 @@ import DistributionPie from "@/components/analytics/charts/DistributionPie";
 import TrendLine from "@/components/analytics/charts/TrendLine";
 import DistributionBar from "@/components/analytics/charts/DistributionBar";
 import AgingChart from "@/components/analytics/charts/AgingChart";
+import FinancialReport from "@/components/analytics/FinancialReport";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -288,81 +289,8 @@ export default function AnalyticsPage() {
         </TabsContent>
 
         {/* ─── Financial Tab ─── */}
-        <TabsContent value="financial" className="space-y-6 mt-6">
-          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
-            <KPICard
-              label="Total Invoiced"
-              value={formatCurrency(financial.totalInvoiced)}
-              icon={<IndianRupee className="h-5 w-5 text-gray-300" />}
-            />
-            <KPICard
-              label="Total Received"
-              value={formatCurrency(financial.totalReceived)}
-              icon={<TrendingUp className="h-5 w-5 text-green-300" />}
-            />
-            <KPICard
-              label="Outstanding"
-              value={formatCurrency(financial.outstanding)}
-              icon={<Clock className="h-5 w-5 text-yellow-300" />}
-            />
-            <KPICard
-              label="Overdue"
-              value={formatCurrency(financial.overdue)}
-              icon={<AlertCircle className="h-5 w-5 text-red-300" />}
-              danger={financial.overdue > 0}
-            />
-            <KPICard
-              label="Net Cashflow"
-              value={formatCurrency(financial.netCashflow)}
-              icon={
-                financial.netCashflow >= 0 ? (
-                  <TrendingUp className="h-5 w-5 text-green-300" />
-                ) : (
-                  <TrendingDown className="h-5 w-5 text-red-300" />
-                )
-              }
-              positive={financial.netCashflow >= 0}
-            />
-            <KPICard
-              label="Collection Rate"
-              value={`${financial.collectionRate}%`}
-              icon={<Target className="h-5 w-5 text-blue-300" />}
-            />
-          </div>
-
-          {/* Revenue Trend */}
-          <ChartCard title="Revenue Trend">
-            <TrendLine
-              data={financial.revenueTrend}
-              xKey="month"
-              lines={[
-                { key: "invoiced", color: "#3B82F6", name: "Invoiced" },
-                { key: "received", color: "#10B981", name: "Received" },
-              ]}
-              formatYAxis={(v) => formatCurrency(v)}
-            />
-          </ChartCard>
-
-          {/* Expense Trend */}
-          <ChartCard title="Expense Trend">
-            <TrendLine
-              data={financial.expenseTrend}
-              xKey="month"
-              lines={[
-                { key: "billed", color: "#F59E0B", name: "Billed" },
-                { key: "paid", color: "#EF4444", name: "Paid" },
-              ]}
-              formatYAxis={(v) => formatCurrency(v)}
-            />
-          </ChartCard>
-
-          {/* Aging */}
-          <ChartCard title="Receivable vs Payable Aging">
-            <AgingChart
-              receivable={financial.receivableAging}
-              payable={financial.payableAging}
-            />
-          </ChartCard>
+        <TabsContent value="financial" className="mt-6">
+          <FinancialReport tenantId={tenant.id} />
         </TabsContent>
 
         {/* ─── Team Tab ─── */}

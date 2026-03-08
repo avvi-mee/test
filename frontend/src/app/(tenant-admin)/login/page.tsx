@@ -3,213 +3,302 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useTenantAuth } from "@/hooks/useTenantAuth";
-import { Lock, User, Briefcase } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getFirebaseAuth } from "@/lib/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { useTenantAuth } from "@/hooks/useTenantAuth";
+import { ShieldCheck, Users, Eye, EyeOff, Mail, ArrowLeft, Lock } from "lucide-react";
 
-export default function TenantLoginPage() {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const { login, loading: designerLoading, error: designerError, isAuthenticated } = useTenantAuth();
+type View = "choose" | "admin" | "employee";
 
-    // Employee Login State
-    const [employeeLoading, setEmployeeLoading] = useState(false);
-    const [employeeError, setEmployeeError] = useState("");
+export default function LoginPage() {
+  const router = useRouter();
+  const { login: adminLogin, loading: adminLoading, error: adminError, isAuthenticated } = useTenantAuth();
 
-    const router = useRouter();
+  const [view, setView] = useState<View>("choose");
 
-    // Redirect if already logged in (Designer)
-    useEffect(() => {
-        if (isAuthenticated) {
-            router.push("/dashboard");
-        }
-    }, [isAuthenticated, router]);
+  // Admin form
+  const [adminEmail, setAdminEmail]       = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [showAdminPw, setShowAdminPw]     = useState(false);
 
-    // Check for employee session
-    useEffect(() => {
-        const empSession = sessionStorage.getItem("employeeSession");
-        if (empSession) {
-            router.push("/employee-dashboard");
-        }
-    }, [router]);
+  // Employee form
+  const [empEmail, setEmpEmail]           = useState("");
+  const [empPassword, setEmpPassword]     = useState("");
+  const [showEmpPw, setShowEmpPw]         = useState(false);
+  const [empLoading, setEmpLoading]       = useState(false);
+  const [empError, setEmpError]           = useState("");
 
-    const handleDesignerLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const success = await login(email, password);
-        if (success) {
-            router.push("/dashboard");
-        }
-    };
+  useEffect(() => {
+    if (isAuthenticated) router.push("/dashboard");
+  }, [isAuthenticated, router]);
 
-    const handleEmployeeLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setEmployeeLoading(true);
-        setEmployeeError("");
+  async function handleAdminSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await adminLogin(adminEmail, adminPassword);
+    if (ok) router.push("/dashboard");
+  }
 
-        const auth = getFirebaseAuth();
-        try {
-            // Step 1: Sign in with Firebase Auth to get an ID token
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            const idToken = await userCredential.user.getIdToken();
+  async function handleEmpSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setEmpError(""); setEmpLoading(true);
+    try {
+      const auth = getFirebaseAuth();
+      const cred = await signInWithEmailAndPassword(auth, empEmail, empPassword);
+      const idToken = await cred.user.getIdToken();
+      const res = await fetch("/api/auth/employee-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setEmpError(d.error || "Login failed. Contact your admin.");
+        await auth.signOut();
+        return;
+      }
+      const { employee } = await res.json();
+      const empRoles: string[] = employee?.roles || [employee?.role || "designer"];
+      let target = "/dashboard";
+      if (empRoles.includes("designer"))             target = "/dashboard/designer";
+      else if (empRoles.includes("site_supervisor")) target = "/dashboard/supervisor";
+      else if (empRoles.includes("sales"))           target = "/dashboard/orders";
+      else if (empRoles.includes("accountant"))      target = "/dashboard/finance";
+      else if (empRoles.includes("project_manager")) target = "/dashboard/projects";
+      router.push(target);
+    } catch (err: any) {
+      if (["auth/user-not-found","auth/wrong-password","auth/invalid-credential"].includes(err.code)) {
+        setEmpError("Invalid email or password.");
+      } else {
+        setEmpError(err.message || "Login failed.");
+      }
+    } finally {
+      setEmpLoading(false);
+    }
+  }
 
-            // Step 2: Server-side lookup — Admin SDK bypasses Firestore security rules
-            const res = await fetch("/api/auth/employee-login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ idToken }),
-            });
+  if (isAuthenticated) return null;
 
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                setEmployeeError(data.error || "Login failed. Please try again.");
-                await auth.signOut();
-                return;
-            }
+  // ── shared card wrapper ────────────────────────────────────────────────────
+  const cardStyle: React.CSSProperties = {
+    background: "var(--glass)",
+    backdropFilter: "var(--glass-blur)",
+    border: "1px solid var(--glass-border-in)",
+    boxShadow: "var(--glass-shadow)",
+  };
 
-            const { employee } = await res.json();
-            sessionStorage.setItem("employeeSession", JSON.stringify(employee));
-            router.push("/employee-dashboard");
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4"
+      style={{ background: "var(--mesh-base)" }}>
 
-        } catch (error: any) {
-            console.error("Employee login error:", error);
-            await auth.signOut().catch(() => {});
-            if (
-                error.code === "auth/user-not-found" ||
-                error.code === "auth/wrong-password" ||
-                error.code === "auth/invalid-credential"
-            ) {
-                setEmployeeError("Invalid email or password.");
-            } else {
-                setEmployeeError("Login failed. Please try again.");
-            }
-        } finally {
-            setEmployeeLoading(false);
-        }
-    };
+      {/* orbs */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-40 -left-40 h-[500px] w-[500px] rounded-full opacity-25 blur-3xl"
+          style={{ background: "var(--mesh-1)" }} />
+        <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full opacity-20 blur-3xl"
+          style={{ background: "var(--mesh-2)" }} />
+      </div>
 
-    if (isAuthenticated) return null;
+      <div className="w-full max-w-sm space-y-6">
 
-    return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-            <Card className="w-full max-w-md">
-                <CardHeader className="text-center pb-2">
-                    <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#0F172A]/10">
-                        <Lock className="h-6 w-6 text-[#0F172A]" />
-                    </div>
-                    <CardTitle className="text-2xl">Client & Team Portal</CardTitle>
-                    <CardDescription>
-                        Secure access for designers and employees
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <Tabs defaultValue="designer" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2 mb-6">
-                            <TabsTrigger value="designer">Designer</TabsTrigger>
-                            <TabsTrigger value="employee">Employee</TabsTrigger>
-                        </TabsList>
+        {/* Logo */}
+        <div className="text-center space-y-1">
+          <div className="mx-auto h-12 w-12 rounded-2xl flex items-center justify-center mb-3"
+            style={{ background: "var(--brand)" }}>
+            <Lock className="h-5 w-5 text-white" />
+          </div>
+          <h1 className="text-xl font-black" style={{ color: "var(--fg-900)" }}>UNMATRIX</h1>
+          <p className="text-sm" style={{ color: "var(--fg-500)" }}>
+            {view === "choose"   ? "Who are you signing in as?"   :
+             view === "admin"    ? "Admin / Owner Login"          :
+                                   "Team Member Login"}
+          </p>
+        </div>
 
-                        <TabsContent value="designer">
-                            <form onSubmit={handleDesignerLogin} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="d-email">Designer Email</Label>
-                                    <div className="relative">
-                                        <Briefcase className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                                        <Input
-                                            id="d-email"
-                                            className="pl-9"
-                                            type="email"
-                                            placeholder="designer@example.com"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            required
-                                            disabled={designerLoading}
-                                        />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <Label htmlFor="d-password">Password</Label>
-                                        <Link href="/forgot-password" className="text-sm text-[#0F172A] hover:underline">
-                                            Forgot password?
-                                        </Link>
-                                    </div>
-                                    <Input
-                                        id="d-password"
-                                        type="password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                        disabled={designerLoading}
-                                    />
-                                </div>
-                                {designerError && (
-                                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                                        {designerError}
-                                    </div>
-                                )}
-                                <Button type="submit" className="w-full bg-[#0F172A]" disabled={designerLoading}>
-                                    {designerLoading ? "Signing in..." : "Designer Sign In"}
-                                </Button>
-                            </form>
-                        </TabsContent>
+        {/* ── CHOOSE VIEW ── */}
+        {view === "choose" && (
+          <div className="space-y-3">
+            <button onClick={() => setView("admin")}
+              className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-left transition-all hover:scale-[1.02]"
+              style={cardStyle}>
+              <div className="h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "var(--brand)" }}>
+                <ShieldCheck className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold" style={{ color: "var(--fg-900)" }}>Admin / Owner</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--fg-500)" }}>Full access to all modules</p>
+              </div>
+              <svg className="ml-auto h-4 w-4 flex-shrink-0" style={{ color: "var(--fg-400)" }}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
 
-                        <TabsContent value="employee">
-                            <form onSubmit={handleEmployeeLogin} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="e-email">Employee Email</Label>
-                                    <div className="relative">
-                                        <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                                        <Input
-                                            id="e-email"
-                                            className="pl-9"
-                                            type="email"
-                                            placeholder="employee@example.com"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            required
-                                            disabled={employeeLoading}
-                                        />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="e-password">Access Password</Label>
-                                    <Input
-                                        id="e-password"
-                                        type="password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                        disabled={employeeLoading}
-                                    />
-                                </div>
-                                {employeeError && (
-                                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                                        {employeeError}
-                                    </div>
-                                )}
-                                <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={employeeLoading}>
-                                    {employeeLoading ? "Verifying..." : "Employee Sign In"}
-                                </Button>
-                            </form>
-                        </TabsContent>
-                    </Tabs>
+            <button onClick={() => setView("employee")}
+              className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-left transition-all hover:scale-[1.02]"
+              style={{ ...cardStyle, border: "1px solid rgba(139,92,246,0.30)" }}>
+              <div className="h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "#7C3AED" }}>
+                <Users className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold" style={{ color: "var(--fg-900)" }}>Team Member</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--fg-500)" }}>
+                  Sales · Designer · Supervisor · Accountant
+                </p>
+              </div>
+              <svg className="ml-auto h-4 w-4 flex-shrink-0" style={{ color: "var(--fg-400)" }}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        )}
 
-                    <div className="mt-6 pt-4 border-t border-gray-100 text-center text-sm">
-                        <p className="text-muted-foreground">
-                            Don't have an account?{" "}
-                            <Link href="/signup" className="text-[#0F172A] hover:underline font-medium">
-                                Create Designer Account
-                            </Link>
-                        </p>
-                    </div>
-                </CardContent>
-            </Card>
-        </div >
-    );
+        {/* ── ADMIN FORM ── */}
+        {view === "admin" && (
+          <div className="rounded-3xl p-6 space-y-5" style={cardStyle}>
+            {/* coloured top strip */}
+            <div className="-mx-6 -mt-6 mb-2 px-6 py-4 rounded-t-3xl flex items-center gap-3"
+              style={{ background: "linear-gradient(135deg, var(--brand) 0%, #0EA5E9 100%)" }}>
+              <ShieldCheck className="h-5 w-5 text-white flex-shrink-0" />
+              <span className="text-white font-bold text-sm">Admin / Owner</span>
+            </div>
+
+            <form onSubmit={handleAdminSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--fg-500)" }}>Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
+                    style={{ color: "var(--fg-400)" }} />
+                  <input type="email" required autoComplete="username"
+                    placeholder="owner@company.com"
+                    value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm border outline-none"
+                    style={{ background: "var(--glass)", color: "var(--fg-900)",
+                      borderColor: "var(--glass-border-in)" }} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--fg-500)" }}>Password</label>
+                <div className="relative">
+                  <input type={showAdminPw ? "text" : "password"} required
+                    autoComplete="current-password" placeholder="••••••••"
+                    value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
+                    className="w-full pl-4 pr-10 py-2.5 rounded-xl text-sm border outline-none"
+                    style={{ background: "var(--glass)", color: "var(--fg-900)",
+                      borderColor: "var(--glass-border-in)" }} />
+                  <button type="button" onClick={() => setShowAdminPw(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    style={{ color: "var(--fg-400)" }}>
+                    {showAdminPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {adminError && (
+                <p className="text-xs px-3 py-2 rounded-xl"
+                  style={{ background: "rgba(220,38,38,0.10)", color: "var(--red)",
+                    border: "1px solid rgba(220,38,38,0.20)" }}>
+                  {adminError}
+                </p>
+              )}
+
+              <button type="submit" disabled={adminLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-white"
+                style={{ background: "var(--brand)", opacity: adminLoading ? 0.7 : 1 }}>
+                {adminLoading ? "Signing in…" : "Sign In"}
+              </button>
+            </form>
+
+            <div className="flex items-center justify-between text-xs pt-1"
+              style={{ color: "var(--fg-400)" }}>
+              <Link href="/forgot-password" style={{ color: "var(--brand)" }}
+                className="hover:underline">Forgot password?</Link>
+              <Link href="/signup" style={{ color: "var(--brand)" }}
+                className="hover:underline">Create account</Link>
+            </div>
+          </div>
+        )}
+
+        {/* ── EMPLOYEE FORM ── */}
+        {view === "employee" && (
+          <div className="rounded-3xl p-6 space-y-5"
+            style={{ ...cardStyle, border: "1px solid rgba(139,92,246,0.30)" }}>
+            <div className="-mx-6 -mt-6 mb-2 px-6 py-4 rounded-t-3xl flex items-center gap-3"
+              style={{ background: "linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)" }}>
+              <Users className="h-5 w-5 text-white flex-shrink-0" />
+              <span className="text-white font-bold text-sm">Team Member</span>
+            </div>
+
+            <form onSubmit={handleEmpSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--fg-500)" }}>Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
+                    style={{ color: "var(--fg-400)" }} />
+                  <input type="email" required autoComplete="username"
+                    placeholder="you@company.com"
+                    value={empEmail} onChange={(e) => setEmpEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm border outline-none"
+                    style={{ background: "var(--glass)", color: "var(--fg-900)",
+                      borderColor: "var(--glass-border-in)" }} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--fg-500)" }}>Password</label>
+                <div className="relative">
+                  <input type={showEmpPw ? "text" : "password"} required
+                    autoComplete="current-password" placeholder="••••••••"
+                    value={empPassword} onChange={(e) => setEmpPassword(e.target.value)}
+                    className="w-full pl-4 pr-10 py-2.5 rounded-xl text-sm border outline-none"
+                    style={{ background: "var(--glass)", color: "var(--fg-900)",
+                      borderColor: "var(--glass-border-in)" }} />
+                  <button type="button" onClick={() => setShowEmpPw(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    style={{ color: "var(--fg-400)" }}>
+                    {showEmpPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {empError && (
+                <p className="text-xs px-3 py-2 rounded-xl"
+                  style={{ background: "rgba(220,38,38,0.10)", color: "var(--red)",
+                    border: "1px solid rgba(220,38,38,0.20)" }}>
+                  {empError}
+                </p>
+              )}
+
+              <button type="submit" disabled={empLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-white"
+                style={{ background: "#7C3AED", opacity: empLoading ? 0.7 : 1 }}>
+                {empLoading ? "Signing in…" : "Sign In"}
+              </button>
+            </form>
+
+            <div className="text-center text-xs">
+              <Link href="/forgot-password" style={{ color: "#A78BFA" }}
+                className="hover:underline">Forgot password?</Link>
+            </div>
+          </div>
+        )}
+
+        {/* Back button */}
+        {view !== "choose" && (
+          <button onClick={() => setView("choose")}
+            className="flex items-center gap-1.5 mx-auto text-xs font-semibold transition-opacity hover:opacity-70"
+            style={{ color: "var(--fg-500)" }}>
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to login options
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }

@@ -14,6 +14,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { useFirestoreQuery } from "@/lib/firestoreQuery";
+import { addPaymentToVendorBill, type VendorPayment } from "@/lib/services/vendorBillService";
 
 export interface Vendor {
   id: string;
@@ -27,13 +28,16 @@ export interface Vendor {
   creditDays: number;
   totalBilled: number;
   totalPaid: number;
+  outstanding: number;
   createdAt: any;
   updatedAt?: any;
 }
 
-export type VendorInput = Omit<Vendor, "id" | "tenantId" | "totalBilled" | "totalPaid" | "createdAt" | "updatedAt">;
+export type VendorInput = Omit<Vendor, "id" | "tenantId" | "totalBilled" | "totalPaid" | "outstanding" | "createdAt" | "updatedAt">;
 
 function mapDocToVendor(id: string, data: any): Vendor {
+  const totalBilled = Number(data.totalBilled) || 0;
+  const totalPaid = Number(data.totalPaid) || 0;
   return {
     id,
     tenantId: data.tenantId ?? "",
@@ -44,8 +48,9 @@ function mapDocToVendor(id: string, data: any): Vendor {
     gstNumber: data.gstNumber ?? undefined,
     address: data.address ?? undefined,
     creditDays: Number(data.creditDays) || 30,
-    totalBilled: Number(data.totalBilled) || 0,
-    totalPaid: Number(data.totalPaid) || 0,
+    totalBilled,
+    totalPaid,
+    outstanding: totalBilled - totalPaid,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? undefined,
   };
@@ -137,5 +142,29 @@ export function useVendors(tenantId: string | null) {
     [tenantId, db, invalidate]
   );
 
-  return { vendors, loading, addVendor, updateVendor, deleteVendor };
+  const payBill = useCallback(
+    async (
+      billId: string,
+      payment: {
+        amount: number;
+        paidOn: Date;
+        method: VendorPayment["method"];
+        reference?: string;
+        createdBy?: string;
+      }
+    ): Promise<boolean> => {
+      if (!tenantId) return false;
+      try {
+        await addPaymentToVendorBill(tenantId, billId, payment);
+        invalidate();
+        return true;
+      } catch (err) {
+        console.error("Error paying vendor bill:", err);
+        return false;
+      }
+    },
+    [tenantId, invalidate]
+  );
+
+  return { vendors, loading, addVendor, updateVendor, deleteVendor, payBill };
 }
