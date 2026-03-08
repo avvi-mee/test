@@ -241,6 +241,29 @@ service cloud.firestore {
       match /counters/{counterId} {
         allow read, write: if isTenantMember(tenantId);
       }
+
+      // Vendors — tenant members only (owner/admin/accountant manage)
+      match /vendors/{vendorId} {
+        allow read: if isTenantMember(tenantId);
+        allow write: if isTenantOwner(tenantId);
+      }
+
+      // Client Accounts — owner can manage, client can read their own
+      match /clientAccounts/{clientId} {
+        allow read: if isTenantOwner(tenantId) || isOwner(clientId);
+        allow write: if isTenantOwner(tenantId);
+      }
+
+      // Contracts — tenant members
+      match /contracts/{contractId} {
+        allow read: if isTenantMember(tenantId);
+        allow write: if isTenantMember(tenantId);
+
+        match /activityLog/{logId} {
+          allow read: if isTenantMember(tenantId);
+          allow create: if isTenantMember(tenantId);
+        }
+      }
     }
 
     // ========================================
@@ -249,6 +272,14 @@ service cloud.firestore {
     match /activities/{activityId} {
       allow read: if isSuperAdmin();
       allow create: if isAuthenticated();
+    }
+
+    // ========================================
+    // Contract Token Index (public read for signing page)
+    // ========================================
+    match /contractTokenIndex/{token} {
+      allow read: if true;   // Public: signing page reads by token
+      allow write: if false; // Only backend (Admin SDK) can write
     }
 
     // ========================================

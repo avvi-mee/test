@@ -1,1438 +1,929 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-    Plus,
-    Save,
-    Trash2,
-    Pencil,
-    ChevronUp,
-    ChevronDown
-} from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Plus, Trash2, Pencil, ChevronDown, ChevronUp, GripVertical, Loader2, Check } from "lucide-react";
 import {
     usePricingConfig,
     PricingConfig,
     Category,
     PricingItem,
     DropdownOption,
-    CarpetAreaSettings,
-    CalculationRules,
-    RateSlab,
-    AdditionalCharge
 } from "@/hooks/usePricingConfig";
-import { CityManagement } from "@/components/dashboard/CityManagement";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
 
-// --- Sub-components for better organization ---
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const cloneConfig = (c: PricingConfig): PricingConfig => JSON.parse(JSON.stringify(c));
+const newId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+// ─── Sub-component: ItemRow ────────────────────────────────────────────────────
+
+interface ItemRowProps {
+    item: PricingItem;
+    onUpdate: (updates: Partial<PricingItem>) => void;
+    onDelete: () => void;
+}
+
+function ItemRow({ item, onUpdate, onDelete }: ItemRowProps) {
+    const [editingName, setEditingName] = useState(false);
+    const [nameVal, setNameVal] = useState(item.name);
+    const nameRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { setNameVal(item.name); }, [item.name]);
+
+    const commitName = () => {
+        const trimmed = nameVal.trim();
+        if (trimmed && trimmed !== item.name) onUpdate({ name: trimmed });
+        else setNameVal(item.name);
+        setEditingName(false);
+    };
+
+    return (
+        <TableRow className="group hover:bg-gray-50/60">
+            {/* Name */}
+            <TableCell className="py-2 min-w-[160px]">
+                {editingName ? (
+                    <input
+                        ref={nameRef}
+                        className="w-full border border-[rgba(0,0,0,0.12)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#E8A020]"
+                        value={nameVal}
+                        onChange={e => setNameVal(e.target.value)}
+                        onBlur={commitName}
+                        onKeyDown={e => {
+                            if (e.key === "Enter") commitName();
+                            if (e.key === "Escape") { setNameVal(item.name); setEditingName(false); }
+                        }}
+                        autoFocus
+                    />
+                ) : (
+                    <span className="flex items-center gap-1.5">
+                        <span className="text-sm">{item.name}</span>
+                        <button
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-700"
+                            onClick={() => { setEditingName(true); setTimeout(() => nameRef.current?.select(), 0); }}
+                        >
+                            <Pencil className="h-3 w-3" />
+                        </button>
+                    </span>
+                )}
+            </TableCell>
+
+            {/* Type */}
+            <TableCell className="py-2 w-[130px]">
+                <Select value={item.type} onValueChange={v => onUpdate({ type: v as PricingItem["type"] })}>
+                    <SelectTrigger className="h-8 text-xs w-full">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="fixed">Fixed</SelectItem>
+                        <SelectItem value="perUnit">Per Unit</SelectItem>
+                        <SelectItem value="perSqft">Per Sqft</SelectItem>
+                    </SelectContent>
+                </Select>
+            </TableCell>
+
+            {/* Basic */}
+            <TableCell className="py-2 bg-gray-50 w-[110px]">
+                <input
+                    type="number"
+                    className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-300 bg-white [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    style={{ MozAppearance: "textfield" } as React.CSSProperties}
+                    value={item.basicPrice}
+                    onChange={e => onUpdate({ basicPrice: +e.target.value })}
+                />
+            </TableCell>
+
+            {/* Standard */}
+            <TableCell className="py-2 bg-blue-50 w-[110px]">
+                <input
+                    type="number"
+                    className="w-full border border-blue-200 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    style={{ MozAppearance: "textfield" } as React.CSSProperties}
+                    value={item.standardPrice}
+                    onChange={e => onUpdate({ standardPrice: +e.target.value })}
+                />
+            </TableCell>
+
+            {/* Luxe */}
+            <TableCell className="py-2 bg-amber-50 w-[110px]">
+                <input
+                    type="number"
+                    className="w-full border border-amber-200 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    style={{ MozAppearance: "textfield" } as React.CSSProperties}
+                    value={item.luxePrice}
+                    onChange={e => onUpdate({ luxePrice: +e.target.value })}
+                />
+            </TableCell>
+
+            {/* Status */}
+            <TableCell className="py-2 w-[80px]">
+                <Switch checked={item.enabled} onCheckedChange={v => onUpdate({ enabled: v })} />
+            </TableCell>
+
+            {/* Delete */}
+            <TableCell className="py-2 w-[48px] text-right">
+                <button
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                    onClick={onDelete}
+                >
+                    <Trash2 className="h-4 w-4" />
+                </button>
+            </TableCell>
+        </TableRow>
+    );
+}
+
+// ─── Sub-component: AddItemDialog ─────────────────────────────────────────────
+
+interface AddItemDialogProps {
+    open: boolean;
+    onClose: () => void;
+    onAdd: (item: Omit<PricingItem, "id">) => void;
+}
+
+function AddItemDialog({ open, onClose, onAdd }: AddItemDialogProps) {
+    const [name, setName] = useState("");
+    const [type, setType] = useState<PricingItem["type"]>("fixed");
+    const [basicPrice, setBasicPrice] = useState(0);
+    const [standardPrice, setStandardPrice] = useState(0);
+    const [luxePrice, setLuxePrice] = useState(0);
+
+    const reset = () => { setName(""); setType("fixed"); setBasicPrice(0); setStandardPrice(0); setLuxePrice(0); };
+
+    const handleClose = () => { reset(); onClose(); };
+    const handleAdd = () => {
+        if (!name.trim()) return;
+        onAdd({ name: name.trim(), type, basicPrice, standardPrice, luxePrice, enabled: true });
+        reset();
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={v => !v && handleClose()}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Add Pricing Item</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                    <div>
+                        <Label className="text-sm font-medium">Item Name *</Label>
+                        <Input
+                            className="mt-1"
+                            placeholder="e.g. TV Unit"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && handleAdd()}
+                            autoFocus
+                        />
+                    </div>
+                    <div>
+                        <Label className="text-sm font-medium">Type</Label>
+                        <Select value={type} onValueChange={v => setType(v as PricingItem["type"])}>
+                            <SelectTrigger className="mt-1">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="fixed">Fixed</SelectItem>
+                                <SelectItem value="perUnit">Per Unit</SelectItem>
+                                <SelectItem value="perSqft">Per Sqft</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <Label className="text-xs text-gray-500">Basic (₹)</Label>
+                            <Input type="number" className="mt-1" value={basicPrice} onChange={e => setBasicPrice(+e.target.value)} />
+                        </div>
+                        <div>
+                            <Label className="text-xs text-blue-600">Standard (₹)</Label>
+                            <Input type="number" className="mt-1 border-blue-200 focus-visible:ring-blue-300" value={standardPrice} onChange={e => setStandardPrice(+e.target.value)} />
+                        </div>
+                        <div>
+                            <Label className="text-xs text-amber-600">Luxe (₹)</Label>
+                            <Input type="number" className="mt-1 border-amber-200 focus-visible:ring-amber-300" value={luxePrice} onChange={e => setLuxePrice(+e.target.value)} />
+                        </div>
+                    </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="ghost" onClick={handleClose}>Cancel</Button>
+                    <Button onClick={handleAdd} disabled={!name.trim()} className="bg-gray-900 hover:bg-gray-800 text-white">
+                        Add Item
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ─── Sub-component: CategoryCard ──────────────────────────────────────────────
 
 interface CategoryCardProps {
     category: Category;
-    catIndex: number;
-    totalInGroup: number;
-    moveCategoryUp: (id: string) => void;
-    moveCategoryDown: (id: string) => void;
-    editingCategoryId: string | null;
-    setEditingCategoryId: (id: string | null) => void;
-    updateCategoryName: (id: string, name: string) => void;
-    deleteCategory: (id: string) => void;
-    setSelectedCategoryForItem: (id: string) => void;
-    setShowAddItem: (show: boolean) => void;
-    editingItemId: string | null;
-    setEditingItemId: (id: string | null) => void;
-    updateItem: (catId: string, itemId: string, updates: Partial<PricingItem>) => void;
-    toggleItem: (catId: string, itemId: string) => void;
-    deleteItem: (catId: string, itemId: string) => void;
+    isDragOver: boolean;
+    onDragStart: () => void;
+    onDragOver: (e: React.DragEvent) => void;
+    onDrop: () => void;
+    onRename: (name: string) => void;
+    onDelete: () => void;
+    onAddItem: () => void;
+    onUpdateItem: (itemId: string, updates: Partial<PricingItem>) => void;
+    onDeleteItem: (itemId: string) => void;
 }
 
-const CategoryCard = ({
-    category, catIndex, totalInGroup,
-    moveCategoryUp, moveCategoryDown,
-    editingCategoryId, setEditingCategoryId, updateCategoryName, deleteCategory,
-    setSelectedCategoryForItem, setShowAddItem,
-    editingItemId, setEditingItemId, updateItem, toggleItem, deleteItem
-}: CategoryCardProps) => {
+function CategoryCard({
+    category, isDragOver,
+    onDragStart, onDragOver, onDrop,
+    onRename, onDelete, onAddItem, onUpdateItem, onDeleteItem,
+}: CategoryCardProps) {
+    const [isExpanded, setIsExpanded] = useState(true);
+    const [editingName, setEditingName] = useState(false);
+    const [nameVal, setNameVal] = useState(category.name);
+
+    useEffect(() => { setNameVal(category.name); }, [category.name]);
+
+    const commitName = () => {
+        const trimmed = nameVal.trim();
+        if (trimmed && trimmed !== category.name) onRename(trimmed);
+        else setNameVal(category.name);
+        setEditingName(false);
+    };
+
+    const isResidential = (category.type ?? "residential") === "residential";
+
     return (
-        <div key={category.id} className="border rounded-xl p-6 space-y-6 hover:shadow-md transition-shadow group/card bg-white">
-            {/* Category Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <div className="flex flex-col gap-1">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 p-0 hover:bg-slate-100"
-                            onClick={() => moveCategoryUp(category.id)}
-                            disabled={catIndex === 0}
-                        >
-                            <ChevronUp className="h-4 w-4" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 p-0 hover:bg-slate-100"
-                            onClick={() => moveCategoryDown(category.id)}
-                            disabled={catIndex === totalInGroup - 1}
-                        >
-                            <ChevronDown className="h-4 w-4" />
-                        </Button>
-                    </div>
-                    {editingCategoryId === category.id ? (
-                        <div className="flex items-center gap-2">
-                            <Input
-                                autoFocus
-                                className="font-bold text-xl w-72 h-10"
-                                defaultValue={category.name}
-                                onBlur={(e) => updateCategoryName(category.id, e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') updateCategoryName(category.id, e.currentTarget.value);
-                                    else if (e.key === 'Escape') setEditingCategoryId(null);
-                                }}
-                            />
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-xl text-[#0F172A]">{category.name}</h3>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-gray-400 hover:text-blue-600 opacity-0 group-hover/card:opacity-100 transition-opacity"
-                                onClick={() => setEditingCategoryId(category.id)}
-                            >
-                                <Pencil className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    )}
-                </div>
-                <div className="flex items-center gap-3">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                            setSelectedCategoryForItem(category.id);
-                            setShowAddItem(true);
+        <div
+            draggable
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onDragEnd={() => {/* handled by parent */}}
+            className={`rounded-xl border bg-white transition-all ${
+                isDragOver ? "ring-1 ring-[rgba(0,0,0,0.12)] border-[rgba(0,0,0,0.12)] shadow-md" : "border-[rgba(0,0,0,0.08)] shadow-[var(--shadow-card)]"
+            }`}
+        >
+            {/* Header */}
+            <div
+                className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
+                onClick={() => setIsExpanded(e => !e)}
+            >
+                <GripVertical className="h-4 w-4 text-gray-300 cursor-grab flex-shrink-0" />
+
+                {/* Name */}
+                {editingName ? (
+                    <input
+                        className="border border-[rgba(0,0,0,0.12)] rounded px-2 py-0.5 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-[#E8A020] w-48"
+                        value={nameVal}
+                        onChange={e => setNameVal(e.target.value)}
+                        onBlur={commitName}
+                        onKeyDown={e => {
+                            if (e.key === "Enter") commitName();
+                            if (e.key === "Escape") { setNameVal(category.name); setEditingName(false); }
                         }}
-                        className="text-blue-600 border-blue-100 hover:bg-blue-50 h-9"
-                    >
-                        <Plus className="h-4 w-4 mr-1" /> Add Item
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteCategory(category.id)}
-                        className="h-9 w-9 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                    >
-                        <Trash2 className="h-4 w-4" />
-                    </Button>
-                </div>
+                        onClick={e => e.stopPropagation()}
+                        autoFocus
+                    />
+                ) : (
+                    <span className="flex items-center gap-1.5 group/name">
+                        <span className="text-sm font-semibold text-[#0A0A0A]">{category.name}</span>
+                        <button
+                            className="opacity-0 group-hover/name:opacity-100 transition-opacity text-[#8A8A8A] hover:text-[#0A0A0A]"
+                            onClick={e => { e.stopPropagation(); setEditingName(true); }}
+                        >
+                            <Pencil className="h-3 w-3" />
+                        </button>
+                    </span>
+                )}
+
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/[0.06] text-[#8A8A8A]">
+                    {category.items.length} items
+                </span>
+                <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
+                    isResidential ? "bg-[#EEF2FF] text-[#4B56D2]" : "bg-[#FFF8E8] text-[#A0700A]"
+                }`}>
+                    {isResidential ? "Residential" : "Commercial"}
+                </span>
+
+                <span className="flex-1" />
+
+                {/* Add Item */}
+                <button
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-colors"
+                    onClick={e => { e.stopPropagation(); onAddItem(); }}
+                >
+                    <Plus className="h-3 w-3" /> Add Item
+                </button>
+
+                {/* Chevron */}
+                {isExpanded
+                    ? <ChevronUp className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                    : <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                }
+
+                {/* Delete */}
+                <button
+                    className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                    onClick={e => {
+                        e.stopPropagation();
+                        if (confirm(`Delete category "${category.name}"? This will remove all ${category.items.length} items.`)) {
+                            onDelete();
+                        }
+                    }}
+                >
+                    <Trash2 className="h-4 w-4" />
+                </button>
             </div>
 
-            {/* Items Table */}
-            {category.items.length > 0 ? (
-                <div className="overflow-hidden border rounded-lg">
-                    <table className="w-full border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50 border-b">
-                                <th className="text-left p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[25%]">Item Name</th>
-                                <th className="text-center p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[12%]">Type</th>
-                                <th className="text-right p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[15%]">Basic (₹)</th>
-                                <th className="text-right p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[15%]">Standard (₹)</th>
-                                <th className="text-right p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[15%]">Luxe (₹)</th>
-                                <th className="text-center p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[8%]">Status</th>
-                                <th className="text-center p-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[10%]">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {category.items.map((item) => (
-                                <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group/item">
-                                    <td className="p-4">
-                                        {editingItemId === item.id ? (
-                                            <Input
-                                                autoFocus
-                                                className="h-8 text-sm"
-                                                defaultValue={item.name}
-                                                onBlur={(e) => {
-                                                    updateItem(category.id, item.id, { name: e.target.value });
-                                                    setEditingItemId(null);
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        updateItem(category.id, item.id, { name: e.currentTarget.value });
-                                                        setEditingItemId(null);
-                                                    } else if (e.key === 'Escape') {
-                                                        setEditingItemId(null);
-                                                    }
-                                                }}
-                                            />
-                                        ) : (
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm font-semibold text-slate-700">{item.name}</span>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-6 w-6 opacity-0 group-hover/item:opacity-100 text-slate-400 hover:text-blue-600 transition-opacity"
-                                                    onClick={() => setEditingItemId(item.id)}
-                                                >
-                                                    <Pencil className="h-3 w-3" />
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="p-4 text-center">
-                                        <Select
-                                            value={item.type}
-                                            onValueChange={(value: 'fixed' | 'perUnit' | 'perSqft') =>
-                                                updateItem(category.id, item.id, { type: value })
-                                            }
-                                        >
-                                            <SelectTrigger className="w-full h-8 text-[11px] font-medium bg-white">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="fixed">Fixed</SelectItem>
-                                                <SelectItem value="perUnit">Per Unit</SelectItem>
-                                                <SelectItem value="perSqft">Per Sqft</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <Input
-                                            type="number"
-                                            className="text-right h-8 w-full text-sm bg-white"
-                                            value={item.basicPrice}
-                                            onChange={(e) =>
-                                                updateItem(category.id, item.id, { basicPrice: parseInt(e.target.value) || 0 })
-                                            }
-                                        />
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <Input
-                                            type="number"
-                                            className="text-right h-8 w-full text-sm font-medium bg-slate-50 border-slate-200"
-                                            value={item.standardPrice}
-                                            onChange={(e) =>
-                                                updateItem(category.id, item.id, { standardPrice: parseInt(e.target.value) || 0 })
-                                            }
-                                        />
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <Input
-                                            type="number"
-                                            className="text-right h-8 w-full text-sm bg-white"
-                                            value={item.luxePrice}
-                                            onChange={(e) =>
-                                                updateItem(category.id, item.id, { luxePrice: parseInt(e.target.value) || 0 })
-                                            }
-                                        />
-                                    </td>
-                                    <td className="p-4 text-center">
-                                        <button
-                                            onClick={() => toggleItem(category.id, item.id)}
-                                            className={cn(
-                                                "relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors shadow-inner",
-                                                item.enabled ? "bg-emerald-500" : "bg-slate-200"
-                                            )}
-                                        >
-                                            <span className={cn(
-                                                "pointer-events-none block h-4 w-4 rounded-full bg-white shadow ring-0 transition-transform",
-                                                item.enabled ? "translate-x-5" : "translate-x-0"
-                                            )} />
-                                        </button>
-                                    </td>
-                                    <td className="p-4 text-center">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => deleteItem(category.id, item.id)}
-                                            className="h-8 w-8 text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </td>
-                                </tr>
+            {/* Body */}
+            {isExpanded && (
+                <div className="border-t border-gray-100 overflow-x-auto">
+                    <Table className="text-sm">
+                        <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                                <TableHead className="py-2 text-gray-600">Item Name</TableHead>
+                                <TableHead className="py-2 text-gray-600 w-[130px]">Type</TableHead>
+                                <TableHead className="py-2 bg-gray-100 text-gray-700 w-[110px] text-right">Basic (₹)</TableHead>
+                                <TableHead className="py-2 bg-blue-100 text-blue-700 w-[110px] text-right">Standard (₹)</TableHead>
+                                <TableHead className="py-2 bg-amber-100 text-amber-700 w-[110px] text-right">Luxe (₹)</TableHead>
+                                <TableHead className="py-2 text-gray-600 w-[80px]">Status</TableHead>
+                                <TableHead className="py-2 w-[48px]"></TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {category.items.map(item => (
+                                <ItemRow
+                                    key={item.id}
+                                    item={item}
+                                    onUpdate={updates => onUpdateItem(item.id, updates)}
+                                    onDelete={() => onDeleteItem(item.id)}
+                                />
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            ) : (
-                <div className="text-center py-10 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
-                    <p className="text-sm text-slate-400">No items added yet. Click &quot;Add Item&quot; to start building this category.</p>
+                            {category.items.length === 0 && (
+                                <TableRow>
+                                    <TableCell colSpan={7} className="text-center text-gray-400 py-6 text-sm">
+                                        No items. Click &quot;+ Add Item&quot; above to get started.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
                 </div>
             )}
         </div>
     );
-};
-
-// --- Main PricingConfigEditor Component ---
-
-interface PricingConfigEditorProps {
-    tenantId: string;
 }
 
-export default function PricingConfigEditor({ tenantId }: PricingConfigEditorProps) {
-    const { config, loading, saveConfig } = usePricingConfig(tenantId);
-    const [localConfig, setLocalConfig] = useState<PricingConfig | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
+// ─── Sub-component: KitchenOptionsList ────────────────────────────────────────
 
-    // Dialog states
-    const [showAddCategory, setShowAddCategory] = useState(false);
-    const [showAddItem, setShowAddItem] = useState(false);
-    const [showAddKitchenLayout, setShowAddKitchenLayout] = useState(false);
-    const [showAddKitchenMaterial, setShowAddKitchenMaterial] = useState(false);
+interface KitchenOptionsListProps {
+    title: string;
+    options: DropdownOption[];
+    onChange: (opts: DropdownOption[]) => void;
+}
 
-    // Form states
-    const [newCategoryName, setNewCategoryName] = useState("");
-    const [newCategoryType, setNewCategoryType] = useState<'residential' | 'commercial'>('residential');
-    const [selectedCategoryForItem, setSelectedCategoryForItem] = useState("");
-    const [newItemName, setNewItemName] = useState("");
-    const [newItemType, setNewItemType] = useState<'fixed' | 'perUnit' | 'perSqft'>('fixed');
-    const [newItemBasicPrice, setNewItemBasicPrice] = useState("");
-    const [newItemStandardPrice, setNewItemStandardPrice] = useState("");
-    const [newItemLuxePrice, setNewItemLuxePrice] = useState("");
-    const [newItemDefaultQuantity, setNewItemDefaultQuantity] = useState("");
-    const [newItemPlanVisibility, setNewItemPlanVisibility] = useState<('Basic' | 'Standard' | 'Luxe')[]>([]);
-    const [newKitchenLayoutName, setNewKitchenLayoutName] = useState("");
-    const [newKitchenMaterialName, setNewKitchenMaterialName] = useState("");
+function KitchenOptionsList({ title, options, onChange }: KitchenOptionsListProps) {
+    const [showAdd, setShowAdd] = useState(false);
+    const [newName, setNewName] = useState("");
 
-    // Edit states
-    const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-    const [editingItemId, setEditingItemId] = useState<string | null>(null);
-    const [editingLayoutId, setEditingLayoutId] = useState<string | null>(null);
-    const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (config) {
-            setLocalConfig(JSON.parse(JSON.stringify(config)));
-        }
-    }, [config]);
-
-    const handleSave = async () => {
-        if (!localConfig) return;
-        setIsSaving(true);
-        const success = await saveConfig(localConfig);
-        if (success) {
-            alert("✅ Pricing configuration saved successfully!");
-        } else {
-            alert("❌ Failed to save pricing configuration");
-        }
-        setIsSaving(false);
+    const handleAdd = () => {
+        if (!newName.trim()) return;
+        onChange([...options, { id: newId(), name: newName.trim(), enabled: true }]);
+        setNewName("");
+        setShowAdd(false);
     };
 
-    // Category Management
-    const addCategory = async () => {
-        if (!localConfig || !newCategoryName) return;
-        const newCategory: Category = {
-            id: `cat_${Date.now()}`,
-            name: newCategoryName,
-            type: newCategoryType,
-            order: localConfig.categories?.length || 0,
-            items: []
-        };
-        const updatedConfig = {
-            ...localConfig,
-            categories: [...(localConfig.categories || []), newCategory]
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-        setNewCategoryName("");
-        setShowAddCategory(false);
+    const toggle = (id: string, enabled: boolean) => {
+        onChange(options.map(o => o.id === id ? { ...o, enabled } : o));
     };
 
-    const deleteCategory = async (categoryId: string) => {
-        if (!localConfig) return;
-        if (!confirm("Are you sure you want to delete this category and all its items?")) return;
-        const updatedConfig = {
-            ...localConfig,
-            categories: localConfig.categories?.filter(c => c.id !== categoryId)
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
+    const remove = (id: string) => {
+        onChange(options.filter(o => o.id !== id));
     };
-
-    const updateCategoryName = (categoryId: string, newName: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            categories: localConfig.categories?.map(c =>
-                c.id === categoryId ? { ...c, name: newName } : c
-            )
-        };
-        setLocalConfig(updatedConfig);
-        saveConfig(updatedConfig);
-        setEditingCategoryId(null);
-    };
-
-    const moveCategoryUp = (categoryId: string) => {
-        if (!localConfig?.categories) return;
-
-        const category = localConfig.categories.find(c => c.id === categoryId);
-        if (!category) return;
-
-        const sameTypeCategories = localConfig.categories
-            .filter(c => (!category.type && !c.type) || c.type === category.type)
-            .sort((a, b) => a.order - b.order);
-
-        const indexInSameType = sameTypeCategories.findIndex(c => c.id === categoryId);
-        if (indexInSameType <= 0) return;
-
-        const categoryAbove = sameTypeCategories[indexInSameType - 1];
-
-        const updatedCategories = localConfig.categories.map(c => {
-            if (c.id === categoryId) return { ...c, order: categoryAbove.order };
-            if (c.id === categoryAbove.id) return { ...c, order: category.order };
-            return c;
-        });
-
-        const updatedConfig = { ...localConfig, categories: updatedCategories };
-        setLocalConfig(updatedConfig);
-        saveConfig(updatedConfig);
-    };
-
-    const moveCategoryDown = (categoryId: string) => {
-        if (!localConfig?.categories) return;
-
-        const category = localConfig.categories.find(c => c.id === categoryId);
-        if (!category) return;
-
-        const sameTypeCategories = localConfig.categories
-            .filter(c => (!category.type && !c.type) || c.type === category.type)
-            .sort((a, b) => a.order - b.order);
-
-        const indexInSameType = sameTypeCategories.findIndex(c => c.id === categoryId);
-        if (indexInSameType < 0 || indexInSameType >= sameTypeCategories.length - 1) return;
-
-        const categoryBelow = sameTypeCategories[indexInSameType + 1];
-
-        const updatedCategories = localConfig.categories.map(c => {
-            if (c.id === categoryId) return { ...c, order: categoryBelow.order };
-            if (c.id === categoryBelow.id) return { ...c, order: category.order };
-            return c;
-        });
-
-        const updatedConfig = { ...localConfig, categories: updatedCategories };
-        setLocalConfig(updatedConfig);
-        saveConfig(updatedConfig);
-    };
-
-    // Item Management
-    const addItem = async () => {
-        if (!localConfig || !selectedCategoryForItem) return;
-
-        if (!newItemName.trim()) {
-            alert("Please enter an item name");
-            return;
-        }
-        if (!newItemBasicPrice || !newItemStandardPrice || !newItemLuxePrice) {
-            alert("Please enter all prices");
-            return;
-        }
-
-        const newItem: PricingItem = {
-            id: `item_${Date.now()}`,
-            name: newItemName,
-            type: newItemType,
-            basicPrice: parseInt(newItemBasicPrice),
-            standardPrice: parseInt(newItemStandardPrice),
-            luxePrice: parseInt(newItemLuxePrice),
-            enabled: true,
-            ...(newItemDefaultQuantity ? { defaultQuantity: parseInt(newItemDefaultQuantity) } : {}),
-            ...(newItemPlanVisibility.length > 0 && newItemPlanVisibility.length < 3 ? { planVisibility: newItemPlanVisibility } : {}),
-        };
-
-        const updatedConfig = {
-            ...localConfig,
-            categories: localConfig.categories?.map(cat =>
-                cat.id === selectedCategoryForItem
-                    ? { ...cat, items: [...cat.items, newItem] }
-                    : cat
-            )
-        };
-
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-
-        setNewItemName("");
-        setNewItemBasicPrice("");
-        setNewItemStandardPrice("");
-        setNewItemLuxePrice("");
-        setNewItemDefaultQuantity("");
-        setNewItemPlanVisibility([]);
-        setShowAddItem(false);
-    };
-
-    const deleteItem = async (categoryId: string, itemId: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            categories: localConfig.categories?.map(cat =>
-                cat.id === categoryId
-                    ? { ...cat, items: cat.items.filter(i => i.id !== itemId) }
-                    : cat
-            )
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-    };
-
-    const updateItem = async (categoryId: string, itemId: string, updates: Partial<PricingItem>) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            categories: localConfig.categories?.map(cat =>
-                cat.id === categoryId
-                    ? {
-                        ...cat,
-                        items: cat.items.map(item =>
-                            item.id === itemId ? { ...item, ...updates } : item
-                        )
-                    }
-                    : cat
-            )
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-    };
-
-    const toggleItem = async (categoryId: string, itemId: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            categories: localConfig.categories?.map(cat =>
-                cat.id === categoryId
-                    ? {
-                        ...cat,
-                        items: cat.items.map(item =>
-                            item.id === itemId ? { ...item, enabled: !item.enabled } : item
-                        )
-                    }
-                    : cat
-            )
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-    };
-
-    // Kitchen Dropdown Management
-    const addKitchenLayout = async () => {
-        if (!localConfig || !newKitchenLayoutName) return;
-        const newLayout: DropdownOption = {
-            id: `kl_${Date.now()}`,
-            name: newKitchenLayoutName,
-            enabled: true
-        };
-        const updatedConfig = {
-            ...localConfig,
-            kitchenLayouts: [...(localConfig.kitchenLayouts || []), newLayout]
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-        setNewKitchenLayoutName("");
-        setShowAddKitchenLayout(false);
-    };
-
-    const deleteKitchenLayout = async (layoutId: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            kitchenLayouts: localConfig.kitchenLayouts?.filter(l => l.id !== layoutId)
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-    };
-
-    const updateKitchenLayout = async (layoutId: string, name: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            kitchenLayouts: localConfig.kitchenLayouts?.map(l =>
-                l.id === layoutId ? { ...l, name } : l
-            )
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-        setEditingLayoutId(null);
-    };
-
-    const toggleKitchenLayout = async (layoutId: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            kitchenLayouts: localConfig.kitchenLayouts?.map(l =>
-                l.id === layoutId ? { ...l, enabled: !l.enabled } : l
-            )
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-    };
-
-    const addKitchenMaterial = async () => {
-        if (!localConfig || !newKitchenMaterialName) return;
-        const newMaterial: DropdownOption = {
-            id: `km_${Date.now()}`,
-            name: newKitchenMaterialName,
-            enabled: true
-        };
-        const updatedConfig = {
-            ...localConfig,
-            kitchenMaterials: [...(localConfig.kitchenMaterials || []), newMaterial]
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-        setNewKitchenMaterialName("");
-        setShowAddKitchenMaterial(false);
-    };
-
-    const deleteKitchenMaterial = async (materialId: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            kitchenMaterials: localConfig.kitchenMaterials?.filter(m => m.id !== materialId)
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-    };
-
-    const updateKitchenMaterial = async (materialId: string, name: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            kitchenMaterials: localConfig.kitchenMaterials?.map(m =>
-                m.id === materialId ? { ...m, name } : m
-            )
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-        setEditingMaterialId(null);
-    };
-
-    const toggleKitchenMaterial = async (materialId: string) => {
-        if (!localConfig) return;
-        const updatedConfig = {
-            ...localConfig,
-            kitchenMaterials: localConfig.kitchenMaterials?.map(m =>
-                m.id === materialId ? { ...m, enabled: !m.enabled } : m
-            )
-        };
-        setLocalConfig(updatedConfig);
-        await saveConfig(updatedConfig);
-    };
-
-    if (loading || !localConfig) {
-        return <div className="p-8 text-center text-gray-500">Loading pricing configuration...</div>;
-    }
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-2">
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <p className="text-gray-500 text-sm">Manage three-tier pricing (Basic / Standard / Luxe) for all items</p>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">
-                        v{localConfig.version || 1}
-                    </span>
+                <h4 className="text-sm font-semibold text-gray-700">{title}</h4>
+                <button
+                    onClick={() => setShowAdd(true)}
+                    className="text-xs flex items-center gap-1 text-[#E8A020] hover:text-[#C4831A]"
+                >
+                    <Plus className="h-3 w-3" /> Add
+                </button>
+            </div>
+            <div className="space-y-1">
+                {options.map(opt => (
+                    <div key={opt.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 group">
+                        <span className="flex-1 text-sm text-gray-700">{opt.name}</span>
+                        <Switch checked={opt.enabled} onCheckedChange={v => toggle(opt.id, v)} />
+                        <button
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-500"
+                            onClick={() => remove(opt.id)}
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+                ))}
+                {options.length === 0 && (
+                    <p className="text-xs text-gray-400 px-2 py-2">No options yet.</p>
+                )}
+            </div>
+            {showAdd && (
+                <div className="flex gap-1.5 items-center">
+                    <Input
+                        placeholder="Option name..."
+                        value={newName}
+                        onChange={e => setNewName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") setShowAdd(false); }}
+                        className="h-8 text-sm"
+                        autoFocus
+                    />
+                    <Button size="sm" onClick={handleAdd} className="h-8 px-3">Add</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowAdd(false); setNewName(""); }} className="h-8 px-2">✕</Button>
                 </div>
-                <div className="flex items-center space-x-4">
-                    {config?.lastUpdated && (
-                        <p className="text-[10px] text-gray-400 uppercase font-bold">
-                            Last Updated: {config.lastUpdated?.toDate ? config.lastUpdated.toDate().toLocaleString() : "Not saved yet"}
-                        </p>
-                    )}
+            )}
+        </div>
+    );
+}
+
+// ─── Sub-component: SettingsTab ───────────────────────────────────────────────
+
+interface SettingsTabProps {
+    config: PricingConfig;
+    updateConfig: (updater: (draft: PricingConfig) => void) => void;
+}
+
+function SettingsTab({ config, updateConfig }: SettingsTabProps) {
+    const ca = config.carpetAreaSettings ?? { minSqft: 200, maxSqft: 10000 };
+    const cr = config.calculationRules ?? {};
+    const gst = cr.gstPercent ?? 0;
+    const designFee = cr.designFeePercent ?? 0;
+    const discount = cr.discountPercent ?? 0;
+
+    return (
+        <div className="space-y-6">
+            {/* Carpet Area */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-800 mb-4">Carpet Area Settings</h3>
+                <div className="grid grid-cols-2 gap-4 max-w-sm">
+                    <div>
+                        <Label className="text-xs text-gray-500">Min Sqft</Label>
+                        <Input
+                            type="number"
+                            className="mt-1"
+                            value={ca.minSqft}
+                            onChange={e => updateConfig(d => {
+                                if (!d.carpetAreaSettings) d.carpetAreaSettings = { minSqft: 200, maxSqft: 10000 };
+                                d.carpetAreaSettings.minSqft = +e.target.value;
+                            })}
+                        />
+                    </div>
+                    <div>
+                        <Label className="text-xs text-gray-500">Max Sqft</Label>
+                        <Input
+                            type="number"
+                            className="mt-1"
+                            value={ca.maxSqft}
+                            onChange={e => updateConfig(d => {
+                                if (!d.carpetAreaSettings) d.carpetAreaSettings = { minSqft: 200, maxSqft: 10000 };
+                                d.carpetAreaSettings.maxSqft = +e.target.value;
+                            })}
+                        />
+                    </div>
+                </div>
+                <p className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 inline-block">
+                    Range: <span className="font-semibold text-gray-700">{ca.minSqft.toLocaleString()}</span> – <span className="font-semibold text-gray-700">{ca.maxSqft.toLocaleString()}</span> sqft
+                </p>
+            </div>
+
+            {/* Calculation Rules */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-800 mb-4">Calculation Rules</h3>
+                <div className="space-y-5 max-w-lg">
+                    {/* GST */}
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <Label className="text-sm text-gray-700">GST %</Label>
+                            <input
+                                type="number"
+                                className="w-16 border rounded px-2 py-1 text-sm text-right [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                style={{ MozAppearance: "textfield" } as React.CSSProperties}
+                                min={0} max={28}
+                                value={gst}
+                                onChange={e => updateConfig(d => {
+                                    if (!d.calculationRules) d.calculationRules = {};
+                                    d.calculationRules.gstPercent = +e.target.value;
+                                })}
+                            />
+                        </div>
+                        <input type="range" min={0} max={28} value={gst}
+                            onChange={e => updateConfig(d => {
+                                if (!d.calculationRules) d.calculationRules = {};
+                                d.calculationRules.gstPercent = +e.target.value;
+                            })}
+                            className="w-full accent-[#E8A020]"
+                        />
+                    </div>
+
+                    {/* Design Fee */}
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <Label className="text-sm text-gray-700">Design Fee %</Label>
+                            <input
+                                type="number"
+                                className="w-16 border rounded px-2 py-1 text-sm text-right [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                style={{ MozAppearance: "textfield" } as React.CSSProperties}
+                                min={0} max={30}
+                                value={designFee}
+                                onChange={e => updateConfig(d => {
+                                    if (!d.calculationRules) d.calculationRules = {};
+                                    d.calculationRules.designFeePercent = +e.target.value;
+                                })}
+                            />
+                        </div>
+                        <input type="range" min={0} max={30} value={designFee}
+                            onChange={e => updateConfig(d => {
+                                if (!d.calculationRules) d.calculationRules = {};
+                                d.calculationRules.designFeePercent = +e.target.value;
+                            })}
+                            className="w-full accent-[#E8A020]"
+                        />
+                    </div>
+
+                    {/* Discount */}
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <Label className="text-sm text-gray-700">Discount %</Label>
+                            <input
+                                type="number"
+                                className="w-16 border rounded px-2 py-1 text-sm text-right [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                style={{ MozAppearance: "textfield" } as React.CSSProperties}
+                                min={0} max={50}
+                                value={discount}
+                                onChange={e => updateConfig(d => {
+                                    if (!d.calculationRules) d.calculationRules = {};
+                                    d.calculationRules.discountPercent = +e.target.value;
+                                })}
+                            />
+                        </div>
+                        <input type="range" min={0} max={50} value={discount}
+                            onChange={e => updateConfig(d => {
+                                if (!d.calculationRules) d.calculationRules = {};
+                                d.calculationRules.discountPercent = +e.target.value;
+                            })}
+                            className="w-full accent-[#E8A020]"
+                        />
+                    </div>
+
+                    {/* Formula preview */}
+                    <div className="bg-gray-50 rounded-lg px-4 py-3 text-xs text-gray-600 border border-gray-200">
+                        <span className="font-medium text-gray-800">Formula preview: </span>
+                        Base Price
+                        {designFee > 0 && <span className="text-indigo-600"> + {designFee}% Design Fee</span>}
+                        {gst > 0 && <span className="text-green-600"> + {gst}% GST</span>}
+                        {discount > 0 && <span className="text-red-500"> − {discount}% Discount</span>}
+                        <span className="text-gray-800 font-medium"> = Final</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Kitchen Options */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-800 mb-4">Kitchen Options</h3>
+                <div className="grid grid-cols-2 gap-8">
+                    <KitchenOptionsList
+                        title="Kitchen Layouts"
+                        options={config.kitchenLayouts ?? []}
+                        onChange={opts => updateConfig(d => { d.kitchenLayouts = opts; })}
+                    />
+                    <KitchenOptionsList
+                        title="Kitchen Materials"
+                        options={config.kitchenMaterials ?? []}
+                        onChange={opts => updateConfig(d => { d.kitchenMaterials = opts; })}
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+
+type TabKey = "residential" | "commercial" | "settings";
+
+export default function PricingConfigEditor({ tenantId }: { tenantId: string }) {
+    const { config, loading, saveConfig } = usePricingConfig(tenantId);
+    const { toast } = useToast();
+
+    const [localConfig, setLocalConfig] = useState<PricingConfig | null>(null);
+    const [hasChanges, setHasChanges] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+    const [activeTab, setActiveTab] = useState<TabKey>("residential");
+
+    const [dragCatId, setDragCatId] = useState<string | null>(null);
+    const [dragOverCatId, setDragOverCatId] = useState<string | null>(null);
+
+    const [showAddCat, setShowAddCat] = useState(false);
+    const [newCatName, setNewCatName] = useState("");
+    const [addItemForCatId, setAddItemForCatId] = useState<string | null>(null);
+
+    // Sync from hook (once, when localConfig is still null)
+    useEffect(() => {
+        if (config && !localConfig) {
+            setLocalConfig(cloneConfig(config));
+        }
+    }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Centralized mutator ──────────────────────────────────────────────────
+    const updateConfig = (updater: (draft: PricingConfig) => void) => {
+        setLocalConfig(prev => {
+            if (!prev) return prev;
+            const next = cloneConfig(prev);
+            updater(next);
+            return next;
+        });
+        setHasChanges(true);
+    };
+
+    // ── Save ─────────────────────────────────────────────────────────────────
+    const handleSave = async () => {
+        if (!localConfig || saving) return;
+        setSaving(true);
+        setSaveStatus("saving");
+        try {
+            const ok = await saveConfig(localConfig);
+            if (ok !== false) {
+                setHasChanges(false);
+                setSaveStatus("saved");
+                toast({ title: "Saved!", description: "Pricing configuration saved." });
+                setTimeout(() => setSaveStatus("idle"), 3000);
+            }
+        } catch {
+            toast({ title: "Error saving", variant: "destructive" });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // ── Category helpers ──────────────────────────────────────────────────────
+    const addCategory = (name: string, type: "residential" | "commercial") => {
+        updateConfig(draft => {
+            const maxOrder = Math.max(-1, ...(draft.categories ?? []).map(c => c.order));
+            draft.categories = [...(draft.categories ?? []), { id: newId(), name, type, order: maxOrder + 1, items: [] }];
+        });
+    };
+
+    const renameCategory = (catId: string, name: string) => {
+        updateConfig(draft => {
+            const cat = draft.categories?.find(c => c.id === catId);
+            if (cat) cat.name = name;
+        });
+    };
+
+    const deleteCategory = (catId: string) => {
+        updateConfig(draft => { draft.categories = draft.categories?.filter(c => c.id !== catId); });
+    };
+
+    const reorderCategory = (type: string, fromId: string, toId: string) => {
+        updateConfig(draft => {
+            const cats = draft.categories ?? [];
+            const fi = cats.findIndex(c => c.id === fromId);
+            const ti = cats.findIndex(c => c.id === toId);
+            if (fi < 0 || ti < 0) return;
+            [cats[fi], cats[ti]] = [cats[ti], cats[fi]];
+            cats.filter(c => (c.type ?? "residential") === type).forEach((c, i) => { c.order = i; });
+        });
+    };
+
+    // ── Item helpers ──────────────────────────────────────────────────────────
+    const addItem = (catId: string, item: Omit<PricingItem, "id">) => {
+        updateConfig(draft => {
+            const cat = draft.categories?.find(c => c.id === catId);
+            if (cat) cat.items = [...cat.items, { ...item, id: newId() }];
+        });
+    };
+
+    const updateItem = (catId: string, itemId: string, updates: Partial<PricingItem>) => {
+        updateConfig(draft => {
+            const item = draft.categories?.find(c => c.id === catId)?.items.find(i => i.id === itemId);
+            if (item) Object.assign(item, updates);
+        });
+    };
+
+    const deleteItem = (catId: string, itemId: string) => {
+        updateConfig(draft => {
+            const cat = draft.categories?.find(c => c.id === catId);
+            if (cat) cat.items = cat.items.filter(i => i.id !== itemId);
+        });
+    };
+
+    // ── Derived data ──────────────────────────────────────────────────────────
+    const categories = localConfig?.categories ?? [];
+    const tabCategories = categories
+        .filter(c => (c.type ?? "residential") === activeTab)
+        .sort((a, b) => a.order - b.order);
+    const residentialCount = categories.filter(c => (c.type ?? "residential") === "residential").length;
+    const commercialCount = categories.filter(c => c.type === "commercial").length;
+
+    const TABS: { key: TabKey; icon: string; label: string; count?: number }[] = [
+        { key: "residential", icon: "🏠", label: "Residential", count: residentialCount },
+        { key: "commercial",  icon: "🏢", label: "Commercial",  count: commercialCount },
+        { key: "settings",    icon: "⚙️", label: "Settings" },
+    ];
+
+    // ── Render ────────────────────────────────────────────────────────────────
+    return (
+        <div className="space-y-6 pb-16">
+            {/* Header */}
+            <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h1 className="text-[20px] font-bold text-[#0A0A0A]">Pricing Configuration</h1>
+                    <p className="text-[13px] text-[#8A8A8A]">Configure prices shown on your public estimate calculator</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-sm">
+                        {saveStatus === "saving" && <span className="text-[#8A8A8A] text-[13px]">Saving...</span>}
+                        {saveStatus === "saved"  && <span className="text-[#1A7A47] text-[13px] flex items-center gap-1"><Check className="h-3.5 w-3.5" /> Saved</span>}
+                        {saveStatus === "idle" && hasChanges && <span className="text-[#E8A020] text-[13px] font-medium">● Unsaved changes</span>}
+                    </span>
                     <Button
                         onClick={handleSave}
-                        disabled={isSaving}
-                        className="bg-[#0F172A] hover:bg-[#1E293B] text-white px-6 py-4 rounded-md flex items-center"
+                        disabled={!hasChanges || saving}
+                        className="bg-[#0A0A0A] hover:bg-[#1A1A1A] text-white disabled:opacity-40"
                     >
-                        <Save className="mr-2 h-4 w-4" /> {isSaving ? "Saving..." : "Save All Changes"}
+                        {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+                        Save Changes
                     </Button>
                 </div>
             </div>
 
-            {/* City Management Section */}
-            <CityManagement tenantId={tenantId} />
-
-            {/* Categories Section */}
-            <div className="space-y-8">
-                {/* Residential Column */}
-                <Card className="border-none shadow-sm bg-white overflow-hidden">
-                    <CardHeader className="flex flex-row items-center justify-between p-6 border-b bg-slate-50">
-                        <div className="flex items-center gap-2">
-                            <div className="h-4 w-1 bg-orange-500 rounded-full"></div>
-                            <CardTitle className="text-lg font-bold text-[#0F172A]">Residential Categories</CardTitle>
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                                setNewCategoryType('residential');
-                                setShowAddCategory(true);
-                            }}
-                            className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                        >
-                            <Plus className="h-4 w-4 mr-1" /> Add Residential Category
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-6">
-                        {localConfig.categories?.filter(c => !c.type || c.type === 'residential').sort((a, b) => a.order - b.order).map((category, catIndex, filteredArr) => (
-                            <CategoryCard
-                                key={category.id}
-                                category={category}
-                                catIndex={catIndex}
-                                totalInGroup={filteredArr.length}
-                                moveCategoryUp={moveCategoryUp}
-                                moveCategoryDown={moveCategoryDown}
-                                editingCategoryId={editingCategoryId}
-                                setEditingCategoryId={setEditingCategoryId}
-                                updateCategoryName={updateCategoryName}
-                                deleteCategory={deleteCategory}
-                                setSelectedCategoryForItem={setSelectedCategoryForItem}
-                                setShowAddItem={setShowAddItem}
-                                editingItemId={editingItemId}
-                                setEditingItemId={setEditingItemId}
-                                updateItem={updateItem}
-                                toggleItem={toggleItem}
-                                deleteItem={deleteItem}
-                            />
-                        ))}
-                        {(!localConfig.categories?.some(c => !c.type || c.type === 'residential')) && (
-                            <p className="text-center text-gray-400 py-8">No residential categories yet.</p>
+            {/* Tab Row */}
+            <div className="flex gap-0 border-b border-[rgba(0,0,0,0.08)]">
+                {TABS.map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => { setActiveTab(tab.key); setShowAddCat(false); }}
+                        className={`px-4 py-2.5 text-sm border-b-2 transition-colors flex items-center gap-2 -mb-px ${
+                            activeTab === tab.key
+                                ? "border-[#E8A020] text-[#0A0A0A] font-semibold"
+                                : "border-transparent text-[#8A8A8A] hover:text-[#0A0A0A] font-medium"
+                        }`}
+                    >
+                        <span>{tab.icon}</span>
+                        <span>{tab.label}</span>
+                        {tab.count !== undefined && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/[0.06] text-[#8A8A8A]">
+                                {tab.count}
+                            </span>
                         )}
-                    </CardContent>
-                </Card>
-
-                {/* Commercial Column */}
-                <Card className="border-none shadow-sm bg-white overflow-hidden">
-                    <CardHeader className="flex flex-row items-center justify-between p-6 border-b bg-slate-50">
-                        <div className="flex items-center gap-2">
-                            <div className="h-4 w-1 bg-blue-500 rounded-full"></div>
-                            <CardTitle className="text-lg font-bold text-[#0F172A]">Commercial Categories</CardTitle>
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                                setNewCategoryType('commercial');
-                                setShowAddCategory(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        >
-                            <Plus className="h-4 w-4 mr-1" /> Add Commercial Category
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-6">
-                        {localConfig.categories?.filter(c => c.type === 'commercial').sort((a, b) => a.order - b.order).map((category, catIndex, filteredArr) => (
-                            <CategoryCard
-                                key={category.id}
-                                category={category}
-                                catIndex={catIndex}
-                                totalInGroup={filteredArr.length}
-                                moveCategoryUp={moveCategoryUp}
-                                moveCategoryDown={moveCategoryDown}
-                                editingCategoryId={editingCategoryId}
-                                setEditingCategoryId={setEditingCategoryId}
-                                updateCategoryName={updateCategoryName}
-                                deleteCategory={deleteCategory}
-                                setSelectedCategoryForItem={setSelectedCategoryForItem}
-                                setShowAddItem={setShowAddItem}
-                                editingItemId={editingItemId}
-                                setEditingItemId={setEditingItemId}
-                                updateItem={updateItem}
-                                toggleItem={toggleItem}
-                                deleteItem={deleteItem}
-                            />
-                        ))}
-                        {(!localConfig.categories?.some(c => c.type === 'commercial')) && (
-                            <p className="text-center text-gray-400 py-8">No commercial categories yet.</p>
-                        )}
-                    </CardContent>
-                </Card>
+                    </button>
+                ))}
             </div>
 
-            {/* Kitchen Dropdowns Section */}
-            <div className="grid grid-cols-2 gap-6">
-                {/* Kitchen Layouts */}
-                <Card className="border-none shadow-sm bg-white">
-                    <CardHeader className="flex flex-row items-center justify-between p-6 border-b">
-                        <CardTitle className="text-lg font-bold text-[#0F172A]">Kitchen Layouts</CardTitle>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowAddKitchenLayout(true)}
-                            className="text-blue-600 hover:text-blue-700"
-                        >
-                            <Plus className="h-4 w-4 mr-1" /> Add
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-3">
-                        {localConfig.kitchenLayouts?.map((layout) => (
-                            <div key={layout.id} className="flex items-center justify-between p-3 border rounded-lg hover:border-[#0F172A] transition-all group">
-                                {editingLayoutId === layout.id ? (
-                                    <Input
-                                        autoFocus
-                                        className="text-sm font-medium"
-                                        defaultValue={layout.name}
-                                        onBlur={(e) => updateKitchenLayout(layout.id, e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') updateKitchenLayout(layout.id, e.currentTarget.value);
-                                            else if (e.key === 'Escape') setEditingLayoutId(null);
-                                        }}
-                                    />
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium">{layout.name}</span>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-5 w-5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600"
-                                            onClick={() => setEditingLayoutId(layout.id)}
-                                        >
-                                            <Pencil className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => toggleKitchenLayout(layout.id)}
-                                        className={cn(
-                                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-                                            layout.enabled ? "bg-[#0F172A]" : "bg-gray-200"
-                                        )}
-                                    >
-                                        <span className={cn(
-                                            "pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform",
-                                            layout.enabled ? "translate-x-5" : "translate-x-0"
-                                        )} />
-                                    </button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => deleteKitchenLayout(layout.id)}
-                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </div>
-                        ))}
-                    </CardContent>
-                </Card>
+            {/* Plan Legend */}
+            {activeTab !== "settings" && (
+                <div className="flex items-center gap-4 text-xs text-gray-500 bg-gray-50 rounded-lg px-4 py-2.5">
+                    <span className="font-medium text-gray-700">Plan columns:</span>
+                    <span className="px-2 py-0.5 rounded bg-gray-200 text-gray-700">Basic</span>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700">Standard</span>
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-700">Luxe</span>
+                    <span className="text-gray-400 ml-2">Fixed = one-time · Per Unit = × qty · Per Sqft = × carpet area</span>
+                </div>
+            )}
 
-                {/* Kitchen Materials */}
-                <Card className="border-none shadow-sm bg-white">
-                    <CardHeader className="flex flex-row items-center justify-between p-6 border-b">
-                        <CardTitle className="text-lg font-bold text-[#0F172A]">Kitchen Materials</CardTitle>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowAddKitchenMaterial(true)}
-                            className="text-blue-600 hover:text-blue-700"
-                        >
-                            <Plus className="h-4 w-4 mr-1" /> Add
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-3">
-                        {localConfig.kitchenMaterials?.map((material) => (
-                            <div key={material.id} className="flex items-center justify-between p-3 border rounded-lg hover:border-[#0F172A] transition-all group">
-                                {editingMaterialId === material.id ? (
-                                    <Input
-                                        autoFocus
-                                        className="text-sm font-medium"
-                                        defaultValue={material.name}
-                                        onBlur={(e) => updateKitchenMaterial(material.id, e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') updateKitchenMaterial(material.id, e.currentTarget.value);
-                                            else if (e.key === 'Escape') setEditingMaterialId(null);
-                                        }}
-                                    />
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium">{material.name}</span>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-5 w-5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600"
-                                            onClick={() => setEditingMaterialId(material.id)}
-                                        >
-                                            <Pencil className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => toggleKitchenMaterial(material.id)}
-                                        className={cn(
-                                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-                                            material.enabled ? "bg-[#0F172A]" : "bg-gray-200"
-                                        )}
-                                    >
-                                        <span className={cn(
-                                            "pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform",
-                                            material.enabled ? "translate-x-5" : "translate-x-0"
-                                        )} />
-                                    </button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => deleteKitchenMaterial(material.id)}
-                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </div>
-                        ))}
-                    </CardContent>
-                </Card>
-            </div>
+            {/* Loading skeleton */}
+            {loading && (
+                <div className="space-y-3">
+                    <div className="h-7 w-48 bg-gray-100 rounded animate-pulse" />
+                    <div className="h-4 w-64 bg-gray-100 rounded animate-pulse" />
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+                    ))}
+                </div>
+            )}
 
-            {/* Carpet Area Settings */}
-            <Card className="border-none shadow-sm bg-white overflow-hidden">
-                <CardHeader className="flex flex-row items-center justify-between p-6 border-b bg-slate-50">
-                    <div className="flex items-center gap-2">
-                        <div className="h-4 w-1 bg-green-500 rounded-full"></div>
-                        <CardTitle className="text-lg font-bold text-[#0F172A]">Carpet Area Settings</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-6 space-y-6">
-                    <div className="grid grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase text-slate-500">Min Sqft</Label>
-                            <Input
-                                type="number"
-                                value={localConfig.carpetAreaSettings?.minSqft ?? 200}
-                                onChange={(e) => setLocalConfig({
-                                    ...localConfig,
-                                    carpetAreaSettings: {
-                                        ...localConfig.carpetAreaSettings || { minSqft: 200, maxSqft: 10000 },
-                                        minSqft: parseInt(e.target.value) || 0
-                                    }
-                                })}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase text-slate-500">Max Sqft</Label>
-                            <Input
-                                type="number"
-                                value={localConfig.carpetAreaSettings?.maxSqft ?? 10000}
-                                onChange={(e) => setLocalConfig({
-                                    ...localConfig,
-                                    carpetAreaSettings: {
-                                        ...localConfig.carpetAreaSettings || { minSqft: 200, maxSqft: 10000 },
-                                        maxSqft: parseInt(e.target.value) || 0
-                                    }
-                                })}
-                            />
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label className="text-xs font-bold uppercase text-slate-500">Base Price Per Sqft (optional)</Label>
-                        <Input
-                            type="number"
-                            placeholder="0"
-                            value={localConfig.carpetAreaSettings?.basePricePerSqft ?? ""}
-                            onChange={(e) => setLocalConfig({
-                                ...localConfig,
-                                carpetAreaSettings: {
-                                    ...localConfig.carpetAreaSettings || { minSqft: 200, maxSqft: 10000 },
-                                    basePricePerSqft: e.target.value ? parseInt(e.target.value) : undefined
-                                }
-                            })}
-                        />
-                        <p className="text-xs text-slate-400">Flat base cost added per sqft to the estimate</p>
-                    </div>
-
-                    {/* Rate Slabs */}
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <Label className="text-xs font-bold uppercase text-slate-500">Rate Slabs (optional)</Label>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-green-600 hover:text-green-700"
-                                onClick={() => {
-                                    const slabs = localConfig.carpetAreaSettings?.rateSlabs || [];
-                                    setLocalConfig({
-                                        ...localConfig,
-                                        carpetAreaSettings: {
-                                            ...localConfig.carpetAreaSettings || { minSqft: 200, maxSqft: 10000 },
-                                            rateSlabs: [...slabs, { id: `slab_${Date.now()}`, minSqft: 0, maxSqft: 0, multiplier: 1, label: '' }]
-                                        }
-                                    });
-                                }}
+            {/* Residential / Commercial tab content */}
+            {!loading && activeTab !== "settings" && (
+                <div className="space-y-3">
+                    {tabCategories.length === 0 && !showAddCat && (
+                        <div className="text-center py-12 text-[#8A8A8A] border border-dashed border-[rgba(0,0,0,0.12)] rounded-xl">
+                            <p className="text-sm">No {activeTab} categories yet.</p>
+                            <button
+                                onClick={() => setShowAddCat(true)}
+                                className="mt-2 text-sm text-[#E8A020] hover:text-[#C4831A] font-medium"
                             >
-                                <Plus className="h-4 w-4 mr-1" /> Add Slab
+                                + Add your first category
+                            </button>
+                        </div>
+                    )}
+
+                    {tabCategories.map(cat => (
+                        <CategoryCard
+                            key={cat.id}
+                            category={cat}
+                            isDragOver={dragOverCatId === cat.id}
+                            onDragStart={() => setDragCatId(cat.id)}
+                            onDragOver={e => { e.preventDefault(); setDragOverCatId(cat.id); }}
+                            onDrop={() => {
+                                if (dragCatId) reorderCategory(activeTab, dragCatId, cat.id);
+                                setDragCatId(null);
+                                setDragOverCatId(null);
+                            }}
+                            onRename={name => renameCategory(cat.id, name)}
+                            onDelete={() => deleteCategory(cat.id)}
+                            onAddItem={() => setAddItemForCatId(cat.id)}
+                            onUpdateItem={(iid, u) => updateItem(cat.id, iid, u)}
+                            onDeleteItem={iid => deleteItem(cat.id, iid)}
+                        />
+                    ))}
+
+                    {/* Inline Add Category */}
+                    {showAddCat ? (
+                        <div className="flex gap-2 items-center p-3 border border-dashed border-[rgba(0,0,0,0.12)] rounded-xl bg-black/[0.02]">
+                            <Input
+                                placeholder="Category name..."
+                                value={newCatName}
+                                onChange={e => setNewCatName(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === "Enter" && newCatName.trim()) {
+                                        addCategory(newCatName.trim(), activeTab as "residential" | "commercial");
+                                        setNewCatName("");
+                                        setShowAddCat(false);
+                                    }
+                                    if (e.key === "Escape") { setShowAddCat(false); setNewCatName(""); }
+                                }}
+                                className="flex-1 border-[rgba(0,0,0,0.12)]"
+                                autoFocus
+                            />
+                            <Button
+                                onClick={() => {
+                                    if (newCatName.trim()) {
+                                        addCategory(newCatName.trim(), activeTab as "residential" | "commercial");
+                                        setNewCatName("");
+                                        setShowAddCat(false);
+                                    }
+                                }}
+                                disabled={!newCatName.trim()}
+                                className="bg-[#0A0A0A] hover:bg-[#1A1A1A] text-white"
+                            >
+                                Add
+                            </Button>
+                            <Button variant="ghost" onClick={() => { setShowAddCat(false); setNewCatName(""); }}>
+                                Cancel
                             </Button>
                         </div>
-                        {(localConfig.carpetAreaSettings?.rateSlabs || []).map((slab, idx) => (
-                            <div key={slab.id} className="grid grid-cols-5 gap-3 items-end border rounded-lg p-3">
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Min Sqft</Label>
-                                    <Input
-                                        type="number"
-                                        className="h-8 text-sm"
-                                        value={slab.minSqft}
-                                        onChange={(e) => {
-                                            const slabs = [...(localConfig.carpetAreaSettings?.rateSlabs || [])];
-                                            slabs[idx] = { ...slabs[idx], minSqft: parseInt(e.target.value) || 0 };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                carpetAreaSettings: { ...localConfig.carpetAreaSettings!, rateSlabs: slabs }
-                                            });
-                                        }}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Max Sqft</Label>
-                                    <Input
-                                        type="number"
-                                        className="h-8 text-sm"
-                                        value={slab.maxSqft}
-                                        onChange={(e) => {
-                                            const slabs = [...(localConfig.carpetAreaSettings?.rateSlabs || [])];
-                                            slabs[idx] = { ...slabs[idx], maxSqft: parseInt(e.target.value) || 0 };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                carpetAreaSettings: { ...localConfig.carpetAreaSettings!, rateSlabs: slabs }
-                                            });
-                                        }}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Multiplier</Label>
-                                    <Input
-                                        type="number"
-                                        step="0.01"
-                                        className="h-8 text-sm"
-                                        value={slab.multiplier}
-                                        onChange={(e) => {
-                                            const slabs = [...(localConfig.carpetAreaSettings?.rateSlabs || [])];
-                                            slabs[idx] = { ...slabs[idx], multiplier: parseFloat(e.target.value) || 1 };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                carpetAreaSettings: { ...localConfig.carpetAreaSettings!, rateSlabs: slabs }
-                                            });
-                                        }}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Label</Label>
-                                    <Input
-                                        className="h-8 text-sm"
-                                        placeholder="e.g. 500-1000 sqft"
-                                        value={slab.label || ''}
-                                        onChange={(e) => {
-                                            const slabs = [...(localConfig.carpetAreaSettings?.rateSlabs || [])];
-                                            slabs[idx] = { ...slabs[idx], label: e.target.value };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                carpetAreaSettings: { ...localConfig.carpetAreaSettings!, rateSlabs: slabs }
-                                            });
-                                        }}
-                                    />
-                                </div>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                    onClick={() => {
-                                        const slabs = (localConfig.carpetAreaSettings?.rateSlabs || []).filter(s => s.id !== slab.id);
-                                        setLocalConfig({
-                                            ...localConfig,
-                                            carpetAreaSettings: { ...localConfig.carpetAreaSettings!, rateSlabs: slabs }
-                                        });
-                                    }}
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        ))}
-                        <p className="text-xs text-slate-400">Multiplier is applied to (items subtotal + base price). E.g., 0.95 = 5% discount for that slab range.</p>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Calculation Rules */}
-            <Card className="border-none shadow-sm bg-white overflow-hidden">
-                <CardHeader className="flex flex-row items-center justify-between p-6 border-b bg-slate-50">
-                    <div className="flex items-center gap-2">
-                        <div className="h-4 w-1 bg-purple-500 rounded-full"></div>
-                        <CardTitle className="text-lg font-bold text-[#0F172A]">Calculation Rules</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-6 space-y-6">
-                    <div className="grid grid-cols-3 gap-6">
-                        <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase text-slate-500">GST %</Label>
-                            <Input
-                                type="number"
-                                placeholder="0"
-                                value={localConfig.calculationRules?.gstPercent ?? ""}
-                                onChange={(e) => setLocalConfig({
-                                    ...localConfig,
-                                    calculationRules: {
-                                        ...localConfig.calculationRules,
-                                        gstPercent: e.target.value ? parseFloat(e.target.value) : 0
-                                    }
-                                })}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase text-slate-500">Discount %</Label>
-                            <Input
-                                type="number"
-                                placeholder="0"
-                                value={localConfig.calculationRules?.discountPercent ?? ""}
-                                onChange={(e) => setLocalConfig({
-                                    ...localConfig,
-                                    calculationRules: {
-                                        ...localConfig.calculationRules,
-                                        discountPercent: e.target.value ? parseFloat(e.target.value) : 0
-                                    }
-                                })}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase text-slate-500">Design Fee %</Label>
-                            <Input
-                                type="number"
-                                placeholder="0"
-                                value={localConfig.calculationRules?.designFeePercent ?? ""}
-                                onChange={(e) => setLocalConfig({
-                                    ...localConfig,
-                                    calculationRules: {
-                                        ...localConfig.calculationRules,
-                                        designFeePercent: e.target.value ? parseFloat(e.target.value) : 0
-                                    }
-                                })}
-                            />
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label className="text-xs font-bold uppercase text-slate-500">Round to Nearest (optional)</Label>
-                        <Input
-                            type="number"
-                            placeholder="e.g. 100"
-                            className="max-w-xs"
-                            value={localConfig.calculationRules?.roundToNearest ?? ""}
-                            onChange={(e) => setLocalConfig({
-                                ...localConfig,
-                                calculationRules: {
-                                    ...localConfig.calculationRules,
-                                    roundToNearest: e.target.value ? parseInt(e.target.value) : undefined
-                                }
-                            })}
-                        />
-                    </div>
-
-                    {/* Additional Charges */}
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <Label className="text-xs font-bold uppercase text-slate-500">Additional Charges</Label>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-purple-600 hover:text-purple-700"
-                                onClick={() => {
-                                    const charges = localConfig.calculationRules?.additionalCharges || [];
-                                    setLocalConfig({
-                                        ...localConfig,
-                                        calculationRules: {
-                                            ...localConfig.calculationRules,
-                                            additionalCharges: [...charges, { id: `charge_${Date.now()}`, label: '', type: 'percentage', value: 0, enabled: true }]
-                                        }
-                                    });
-                                }}
+                    ) : (
+                        tabCategories.length > 0 && (
+                            <button
+                                onClick={() => setShowAddCat(true)}
+                                className="w-full py-3 border border-dashed border-[rgba(0,0,0,0.12)] rounded-xl text-sm text-[#8A8A8A] hover:border-[rgba(0,0,0,0.20)] hover:text-[#0A0A0A] flex items-center justify-center gap-2 transition-colors"
                             >
-                                <Plus className="h-4 w-4 mr-1" /> Add Charge
-                            </Button>
-                        </div>
-                        {(localConfig.calculationRules?.additionalCharges || []).map((charge, idx) => (
-                            <div key={charge.id} className="grid grid-cols-5 gap-3 items-end border rounded-lg p-3">
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Label</Label>
-                                    <Input
-                                        className="h-8 text-sm"
-                                        placeholder="e.g. Service Tax"
-                                        value={charge.label}
-                                        onChange={(e) => {
-                                            const charges = [...(localConfig.calculationRules?.additionalCharges || [])];
-                                            charges[idx] = { ...charges[idx], label: e.target.value };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                calculationRules: { ...localConfig.calculationRules, additionalCharges: charges }
-                                            });
-                                        }}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Type</Label>
-                                    <Select
-                                        value={charge.type}
-                                        onValueChange={(value: 'percentage' | 'fixed') => {
-                                            const charges = [...(localConfig.calculationRules?.additionalCharges || [])];
-                                            charges[idx] = { ...charges[idx], type: value };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                calculationRules: { ...localConfig.calculationRules, additionalCharges: charges }
-                                            });
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-8 text-sm">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="percentage">Percentage</SelectItem>
-                                            <SelectItem value="fixed">Fixed</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Value</Label>
-                                    <Input
-                                        type="number"
-                                        className="h-8 text-sm"
-                                        value={charge.value}
-                                        onChange={(e) => {
-                                            const charges = [...(localConfig.calculationRules?.additionalCharges || [])];
-                                            charges[idx] = { ...charges[idx], value: parseFloat(e.target.value) || 0 };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                calculationRules: { ...localConfig.calculationRules, additionalCharges: charges }
-                                            });
-                                        }}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] text-slate-400">Enabled</Label>
-                                    <button
-                                        onClick={() => {
-                                            const charges = [...(localConfig.calculationRules?.additionalCharges || [])];
-                                            charges[idx] = { ...charges[idx], enabled: !charges[idx].enabled };
-                                            setLocalConfig({
-                                                ...localConfig,
-                                                calculationRules: { ...localConfig.calculationRules, additionalCharges: charges }
-                                            });
-                                        }}
-                                        className={cn(
-                                            "relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-                                            charge.enabled ? "bg-emerald-500" : "bg-slate-200"
-                                        )}
-                                    >
-                                        <span className={cn(
-                                            "pointer-events-none block h-4 w-4 rounded-full bg-white shadow ring-0 transition-transform",
-                                            charge.enabled ? "translate-x-5" : "translate-x-0"
-                                        )} />
-                                    </button>
-                                </div>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                    onClick={() => {
-                                        const charges = (localConfig.calculationRules?.additionalCharges || []).filter(c => c.id !== charge.id);
-                                        setLocalConfig({
-                                            ...localConfig,
-                                            calculationRules: { ...localConfig.calculationRules, additionalCharges: charges }
-                                        });
-                                    }}
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
+                                <Plus className="h-4 w-4" /> Add Category
+                            </button>
+                        )
+                    )}
+                </div>
+            )}
 
-            {/* Add Category Dialog */}
-            <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Add New Category</DialogTitle>
-                        <DialogDescription>Create a new category to organize your pricing items.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div>
-                            <Label>Category Type</Label>
-                            <Select value={newCategoryType} onValueChange={(value: 'residential' | 'commercial') => setNewCategoryType(value)}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="residential">Residential</SelectItem>
-                                    <SelectItem value="commercial">Commercial</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <Label>Category Name</Label>
-                            <Input
-                                placeholder="e.g., Living Area, Office Space, Reception"
-                                value={newCategoryName}
-                                onChange={(e) => setNewCategoryName(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setShowAddCategory(false)}>Cancel</Button>
-                        <Button onClick={addCategory}>Add Category</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {/* Settings tab */}
+            {!loading && activeTab === "settings" && localConfig && (
+                <SettingsTab config={localConfig} updateConfig={updateConfig} />
+            )}
 
             {/* Add Item Dialog */}
-            <Dialog open={showAddItem} onOpenChange={setShowAddItem}>
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle>Add New Item</DialogTitle>
-                        <DialogDescription>Add a new pricing item to the selected category.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div>
-                            <Label>Item Name</Label>
-                            <Input
-                                placeholder="e.g., TV Unit, Wardrobe, Vanity"
-                                value={newItemName}
-                                onChange={(e) => setNewItemName(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <Label>Pricing Type</Label>
-                            <Select value={newItemType} onValueChange={(value: 'fixed' | 'perUnit' | 'perSqft') => setNewItemType(value)}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="fixed">Fixed Price (one-time)</SelectItem>
-                                    <SelectItem value="perUnit">Per Unit (quantity-based)</SelectItem>
-                                    <SelectItem value="perSqft">Per Sqft (area-based)</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4">
-                            <div>
-                                <Label>Basic Price (₹)</Label>
-                                <Input
-                                    type="number"
-                                    placeholder="28000"
-                                    value={newItemBasicPrice}
-                                    onChange={(e) => setNewItemBasicPrice(e.target.value)}
-                                />
-                            </div>
-                            <div>
-                                <Label>Standard Price (₹)</Label>
-                                <Input
-                                    type="number"
-                                    placeholder="35000"
-                                    value={newItemStandardPrice}
-                                    onChange={(e) => setNewItemStandardPrice(e.target.value)}
-                                />
-                            </div>
-                            <div>
-                                <Label>Luxe Price (₹)</Label>
-                                <Input
-                                    type="number"
-                                    placeholder="42000"
-                                    value={newItemLuxePrice}
-                                    onChange={(e) => setNewItemLuxePrice(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <Label>Default Quantity (optional)</Label>
-                            <Input
-                                type="number"
-                                placeholder="0"
-                                value={newItemDefaultQuantity}
-                                onChange={(e) => setNewItemDefaultQuantity(e.target.value)}
-                            />
-                            <p className="text-xs text-slate-400 mt-1">Pre-filled quantity in estimate wizard</p>
-                        </div>
-                        <div>
-                            <Label>Plan Visibility</Label>
-                            <div className="flex gap-4 mt-2">
-                                {(['Basic', 'Standard', 'Luxe'] as const).map(plan => (
-                                    <label key={plan} className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            className="rounded border-slate-300"
-                                            checked={newItemPlanVisibility.length === 0 || newItemPlanVisibility.includes(plan)}
-                                            onChange={(e) => {
-                                                if (newItemPlanVisibility.length === 0) {
-                                                    // First uncheck: set all except this one
-                                                    setNewItemPlanVisibility((['Basic', 'Standard', 'Luxe'] as const).filter(p => p !== plan));
-                                                } else if (e.target.checked) {
-                                                    const updated = [...newItemPlanVisibility, plan];
-                                                    setNewItemPlanVisibility(updated.length === 3 ? [] : updated);
-                                                } else {
-                                                    setNewItemPlanVisibility(newItemPlanVisibility.filter(p => p !== plan));
-                                                }
-                                            }}
-                                        />
-                                        <span className="text-sm">{plan}</span>
-                                    </label>
-                                ))}
-                            </div>
-                            <p className="text-xs text-slate-400 mt-1">All checked = visible to all plans</p>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setShowAddItem(false)}>Cancel</Button>
-                        <Button onClick={addItem}>Add Item</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Add Kitchen Layout Dialog */}
-            <Dialog open={showAddKitchenLayout} onOpenChange={setShowAddKitchenLayout}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Add Kitchen Layout</DialogTitle>
-                        <DialogDescription>Add a new kitchen layout option for the dropdown.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div>
-                            <Label>Layout Name</Label>
-                            <Input
-                                placeholder="e.g., L-Shape, U-Shape, Island"
-                                value={newKitchenLayoutName}
-                                onChange={(e) => setNewKitchenLayoutName(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setShowAddKitchenLayout(false)}>Cancel</Button>
-                        <Button onClick={addKitchenLayout}>Add Layout</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Add Kitchen Material Dialog */}
-            <Dialog open={showAddKitchenMaterial} onOpenChange={setShowAddKitchenMaterial}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Add Kitchen Material</DialogTitle>
-                        <DialogDescription>Add a new kitchen material option for the dropdown.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div>
-                            <Label>Material Name</Label>
-                            <Input
-                                placeholder="e.g., Marine Ply, HDHMR, MDF"
-                                value={newKitchenMaterialName}
-                                onChange={(e) => setNewKitchenMaterialName(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setShowAddKitchenMaterial(false)}>Cancel</Button>
-                        <Button onClick={addKitchenMaterial}>Add Material</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <AddItemDialog
+                open={!!addItemForCatId}
+                onClose={() => setAddItemForCatId(null)}
+                onAdd={item => {
+                    if (addItemForCatId) addItem(addItemForCatId, item);
+                    setAddItemForCatId(null);
+                }}
+            />
         </div>
     );
 }

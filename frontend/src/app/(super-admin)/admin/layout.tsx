@@ -3,14 +3,16 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2 as Building, Settings as Config, LogOut as Leave, Shield as Lock, LayoutDashboard as Dashboard } from "lucide-react";
+import { Building2 as Building, Settings as Config, LogOut as Leave, Shield as Lock, LayoutDashboard as Dashboard, Zap, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 
 const ADMIN_ITEMS = [
-    { label: "Overview", href: "/admin/dashboard", icon: Dashboard },
-    { label: "Companies", href: "/admin/designers", icon: Building },
+    { label: "Overview",      href: "/admin/dashboard",     icon: Dashboard  },
+    { label: "Companies",     href: "/admin/designers",     icon: Building   },
+    { label: "Feature Flags", href: "/admin/feature-flags", icon: Zap        },
+    { label: "Analytics",     href: "/admin/analytics",     icon: BarChart3  },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

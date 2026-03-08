@@ -607,6 +607,49 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
             {Icons.bell}
           </motion.button>
 
+          {/* Theme toggle */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            className="relative h-8 rounded-full flex items-center px-1 gap-0 flex-shrink-0 transition-all duration-300"
+            style={{
+              width: '56px',
+              background: theme === 'dark'
+                ? 'linear-gradient(135deg, #1E1B4B, #0F0A1E)'
+                : 'linear-gradient(135deg, #BAE6FD, #FDE68A)',
+              border: '1px solid var(--glass-border-in)',
+              boxShadow: theme === 'dark'
+                ? '0 0 12px rgba(139,92,246,0.25)'
+                : '0 0 12px rgba(252,211,77,0.30)',
+            }}
+          >
+            {/* Track labels */}
+            <span className="absolute left-[7px] text-[9px]" style={{ opacity: theme === 'light' ? 0 : 0.6 }}>🌙</span>
+            <span className="absolute right-[7px] text-[9px]" style={{ opacity: theme === 'dark' ? 0 : 0.6 }}>☀️</span>
+            {/* Sliding knob */}
+            <motion.div
+              layout
+              transition={{ type: 'spring', stiffness: 600, damping: 35 }}
+              className="absolute flex items-center justify-center rounded-full text-white"
+              style={{
+                width: '22px',
+                height: '22px',
+                left: theme === 'dark' ? '30px' : '3px',
+                background: theme === 'dark'
+                  ? 'linear-gradient(135deg, #7C3AED, #4F46E5)'
+                  : 'linear-gradient(135deg, #F59E0B, #EF4444)',
+                boxShadow: theme === 'dark'
+                  ? '0 2px 8px rgba(124,58,237,0.6)'
+                  : '0 2px 8px rgba(245,158,11,0.6)',
+                fontSize: '10px',
+              }}
+            >
+              {theme === 'dark' ? '🌙' : '☀️'}
+            </motion.div>
+          </motion.button>
+
           {/* New Estimate CTA */}
           <motion.button
             whileHover={{ scale: 1.02 }}

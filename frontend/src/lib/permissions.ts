@@ -1,6 +1,7 @@
 // Role types
 export type EmployeeRole =
   | "owner"
+  | "admin"
   | "sales"
   | "designer"
   | "project_manager"
@@ -20,17 +21,51 @@ export type PermissionAction =
   | "manage_invoices"
   | "view_vendor_bills"
   | "manage_vendor_bills"
+  | "view_finance"
+  | "manage_finance"
+  | "view_vendors"
   | "view_analytics"
+  | "view_client_portal"
+  | "view_team_collab"
   | "manage_employees"
   | "manage_website"
   | "manage_pricing"
   | "manage_settings"
   | "upload_attachments"
   | "add_comments"
-  | "assign_roles";
+  | "assign_roles"
+  | "view_contracts"
+  | "manage_contracts";
 
 // Permission matrix
 const PERMISSIONS: Record<EmployeeRole, PermissionAction[]> = {
+  admin: [
+    "view_dashboard",
+    "view_leads",
+    "manage_leads",
+    "view_estimates",
+    "view_projects",
+    "manage_projects",
+    "assign_employees",
+    "view_invoices",
+    "manage_invoices",
+    "view_vendor_bills",
+    "manage_vendor_bills",
+    "view_finance",
+    "manage_finance",
+    "view_vendors",
+    "view_analytics",
+    "view_client_portal",
+    "view_team_collab",
+    "manage_employees",
+    "manage_website",
+    "manage_pricing",
+    "upload_attachments",
+    "add_comments",
+    "view_contracts",
+    "manage_contracts",
+    // NOT: manage_settings, assign_roles
+  ],
   owner: [
     "view_dashboard",
     "view_leads",
@@ -43,7 +78,12 @@ const PERMISSIONS: Record<EmployeeRole, PermissionAction[]> = {
     "manage_invoices",
     "view_vendor_bills",
     "manage_vendor_bills",
+    "view_finance",
+    "manage_finance",
+    "view_vendors",
     "view_analytics",
+    "view_client_portal",
+    "view_team_collab",
     "manage_employees",
     "manage_website",
     "manage_pricing",
@@ -51,6 +91,8 @@ const PERMISSIONS: Record<EmployeeRole, PermissionAction[]> = {
     "upload_attachments",
     "add_comments",
     "assign_roles",
+    "view_contracts",
+    "manage_contracts",
   ],
   sales: [
     "view_dashboard",
@@ -58,6 +100,8 @@ const PERMISSIONS: Record<EmployeeRole, PermissionAction[]> = {
     "manage_leads",
     "view_estimates",
     "view_projects",
+    "view_team_collab",
+    "add_comments",
   ],
   designer: [
     "view_dashboard",
@@ -65,8 +109,10 @@ const PERMISSIONS: Record<EmployeeRole, PermissionAction[]> = {
     "view_estimates",
     "view_projects",
     "manage_projects",
+    "view_team_collab",
     "upload_attachments",
     "add_comments",
+    "view_contracts",
   ],
   project_manager: [
     "view_dashboard",
@@ -77,15 +123,21 @@ const PERMISSIONS: Record<EmployeeRole, PermissionAction[]> = {
     "assign_employees",
     "view_invoices",
     "view_vendor_bills",
+    "view_finance",
+    "view_vendors",
     "view_analytics",
+    "view_team_collab",
     "upload_attachments",
     "add_comments",
     "assign_roles",
+    "view_contracts",
+    "manage_contracts",
   ],
   site_supervisor: [
     "view_dashboard",
     "view_projects",
     "manage_projects",
+    "view_team_collab",
     "upload_attachments",
     "add_comments",
   ],
@@ -95,8 +147,12 @@ const PERMISSIONS: Record<EmployeeRole, PermissionAction[]> = {
     "manage_invoices",
     "view_vendor_bills",
     "manage_vendor_bills",
+    "view_finance",
+    "manage_finance",
+    "view_vendors",
     "view_analytics",
     "add_comments",
+    "view_contracts",
   ],
 };
 
@@ -108,16 +164,22 @@ export interface SidebarPermission {
 
 // Map sidebar items to required permissions
 const SIDEBAR_PERMISSION_MAP: SidebarPermission[] = [
-  { href: "/dashboard", requiredPermission: "view_dashboard" },
-  { href: "/dashboard/orders", requiredPermission: "view_leads" },
-  { href: "/dashboard/projects", requiredPermission: "view_projects" },
-  { href: "/dashboard/finance", requiredPermission: "view_invoices" },
-  { href: "/dashboard/customers", requiredPermission: "view_leads" },
-  { href: "/dashboard/analytics", requiredPermission: "view_analytics" },
-  { href: "/dashboard/consultation-requests", requiredPermission: "view_leads" },
-  { href: "/dashboard/website-setup", requiredPermission: "manage_website" },
-  { href: "/dashboard/employees", requiredPermission: "manage_employees" },
-  { href: "/dashboard/settings", requiredPermission: "manage_settings" },
+  { href: "/dashboard",                        requiredPermission: "view_dashboard"    },
+  { href: "/dashboard/analytics",              requiredPermission: "view_analytics"    },
+  { href: "/dashboard/orders",                 requiredPermission: "view_leads"        },
+  { href: "/dashboard/consultation-requests",  requiredPermission: "view_leads"        },
+  { href: "/dashboard/projects",               requiredPermission: "view_projects"     },
+  { href: "/dashboard/client-portal",          requiredPermission: "view_client_portal"},
+  { href: "/dashboard/finance",                requiredPermission: "view_finance"      },
+  { href: "/dashboard/invoices",               requiredPermission: "view_finance"      },
+  { href: "/dashboard/vendor-bills",           requiredPermission: "view_finance"      },
+  { href: "/dashboard/vendors",                requiredPermission: "view_vendors"      },
+  { href: "/dashboard/employees",              requiredPermission: "manage_employees"  },
+  { href: "/dashboard/team",                   requiredPermission: "view_team_collab"  },
+  { href: "/dashboard/website-setup",          requiredPermission: "manage_website"    },
+  { href: "/dashboard/pricing",                requiredPermission: "manage_pricing"    },
+  { href: "/dashboard/settings",               requiredPermission: "manage_settings"   },
+  { href: "/dashboard/contracts",              requiredPermission: "view_contracts"    },
 ];
 
 // Check if a user with given roles can perform an action
@@ -148,7 +210,7 @@ export function getAllowedSidebarHrefs(roles: string[]): Set<string> {
 export function getDashboardView(
   roles: string[]
 ): "all" | "sales" | "projects" | "finance" {
-  if (roles.includes("owner")) return "all";
+  if (roles.includes("owner") || roles.includes("admin")) return "all";
   if (roles.includes("accountant")) return "finance";
   if (roles.includes("sales")) return "sales";
   if (

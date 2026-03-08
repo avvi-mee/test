@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getDb } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -234,9 +234,14 @@ export function usePricingConfig(tenantId: string | null) {
     const qk = ["pricing-config", tenantId] as const;
     const db = getDb();
 
+    const pricingDocRef = useMemo(
+        () => (tenantId ? doc(db, `tenants/${tenantId}/pricing/config`) : null),
+        [db, tenantId]
+    );
+
     const { data: config = null, isLoading: loading } = useFirestoreDoc<PricingConfig>({
         queryKey: qk,
-        docRef: doc(db, `tenants/${tenantId}/pricing/config`),
+        docRef: pricingDocRef!,
         mapDoc: (snap) => {
             if (!snap.exists()) return createDefaultConfig();
             const data = snap.data()!;
@@ -258,7 +263,7 @@ export function usePricingConfig(tenantId: string | null) {
 
             return parsed;
         },
-        enabled: !!tenantId,
+        enabled: !!tenantId && !!pricingDocRef,
     });
 
     const invalidate = useCallback(

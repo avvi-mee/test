@@ -1,541 +1,1344 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow
-} from "@/components/ui/table";
+import { useState, useMemo } from "react";
+import { useContracts } from "@/hooks/useContracts";
+import { CreateEmployeeContractDrawer } from "@/components/dashboard/contracts/CreateEmployeeContractDrawer";
+import { ContractDetailDrawer } from "@/components/dashboard/contracts/ContractDetailDrawer";
+import { ContractStatusBadge } from "@/components/dashboard/contracts/ContractStatusBadge";
+import type { Contract, EmployeeContractFields } from "@/types/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { useTenantAuth } from "@/hooks/useTenantAuth";
-import { getDb, getFirebaseAuth } from "@/lib/firebase";
-import { collection, query, onSnapshot, doc, updateDoc, addDoc, deleteDoc } from "firebase/firestore";
-import { Plus, Trash2, Edit, Loader2, KeyRound, ShieldCheck, ShieldOff, Eye, EyeOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useTenantAuth } from "@/hooks/useTenantAuth";
+import { useTeam, type TeamMember } from "@/hooks/useTeam";
+import { useLeads } from "@/hooks/useLeads";
+import { getFirebaseAuth } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Plus,
+  Search,
+  LayoutGrid,
+  List,
+  Edit,
+  KeyRound,
+  Trash2,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  ShieldOff,
+  Check,
+  Copy,
+  Loader2,
+  MapPin,
+  Phone,
+  Mail,
+  Users,
+  FileSignature,
+} from "lucide-react";
+
+// ─── Static Config ───────────────────────────────────────────────────────────
+
+const ROLE_CONFIG: Record<
+  string,
+  { icon: string; label: string; pill: string; topBorder: string; avatar: string }
+> = {
+  owner: {
+    icon: "👑",
+    label: "OWNER",
+    pill: "bg-[#FFF8E8] text-[#A0700A]",
+    topBorder: "border-t-[2px] border-[#A0700A]",
+    avatar: "from-amber-400 to-orange-500",
+  },
+  sales: {
+    icon: "🎯",
+    label: "SALES",
+    pill: "bg-[#EEF2FF] text-[#4B56D2]",
+    topBorder: "border-t-[2px] border-[#4B56D2]",
+    avatar: "from-indigo-400 to-violet-500",
+  },
+  designer: {
+    icon: "✏️",
+    label: "DESIGNER",
+    pill: "bg-[#EDFBF3] text-[#1A7A47]",
+    topBorder: "border-t-[2px] border-[#1A7A47]",
+    avatar: "from-emerald-400 to-teal-500",
+  },
+  site_supervisor: {
+    icon: "🏗️",
+    label: "SITE SUPERVISOR",
+    pill: "bg-[#E8F4FD] text-[#1D6FA4]",
+    topBorder: "border-t-[2px] border-[#1D6FA4]",
+    avatar: "from-sky-400 to-blue-500",
+  },
+  accountant: {
+    icon: "📊",
+    label: "ACCOUNTANT",
+    pill: "bg-[#F3F0FF] text-[#6B4FBB]",
+    topBorder: "border-t-[2px] border-[#6B4FBB]",
+    avatar: "from-violet-400 to-purple-500",
+  },
+  project_manager: {
+    icon: "📋",
+    label: "PROJECT MANAGER",
+    pill: "bg-[#FDF0F8] text-[#9B2158]",
+    topBorder: "border-t-[2px] border-[#9B2158]",
+    avatar: "from-pink-400 to-rose-500",
+  },
+};
+
+const FILTER_TABS = [
+  { value: "all", label: "All" },
+  { value: "sales", label: "Sales" },
+  { value: "designer", label: "Designer" },
+  { value: "site_supervisor", label: "Site Supervisor" },
+  { value: "accountant", label: "Accountant" },
+  { value: "project_manager", label: "Project Manager" },
+];
 
 const ROLE_OPTIONS = [
-    { value: "sales", label: "Sales" },
-    { value: "designer", label: "Designer" },
-    { value: "project_manager", label: "Project Manager" },
-    { value: "site_supervisor", label: "Site Supervisor" },
-    { value: "accountant", label: "Accountant" },
+  "sales",
+  "designer",
+  "site_supervisor",
+  "accountant",
+  "project_manager",
 ] as const;
 
-interface Employee {
-    id: string;
-    name: string;
-    email: string;
-    area: string;
-    phone: string;
-    totalWork: number;
-    currentWork: string;
-    upcomingWork?: string;
-    role?: string;
-    roles?: string[];
-    primaryRole?: string;
-    tenantId: string;
-    createdAt?: string;
-    hasLoginAccess: boolean;
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 }
 
-export default function EmployeesPage() {
-    const { tenant, loading: authLoading } = useTenantAuth();
-    const { toast } = useToast();
+function getPrimaryRole(member: TeamMember): string {
+  if (member.isOwner) return "owner";
+  return member.roles[0] ?? "sales";
+}
 
-    const [employees, setEmployees] = useState<Employee[]>([]);
-    const [loading, setLoading] = useState(true);
+// ─── EmployeeCard ────────────────────────────────────────────────────────────
 
-    // ── Edit Employee dialog ────────────────────────────────────────────────
-    const [isEditOpen, setIsEditOpen] = useState(false);
-    const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-    const [editForm, setEditForm] = useState({
-        name: "", email: "", area: "", phone: "",
-        totalWork: 0, currentWork: "None", upcomingWork: "None",
-        primaryRole: "designer" as string, roles: ["designer"] as string[],
-    });
+function EmployeeCard({
+  member,
+  leadCount,
+  empContract,
+  onEdit,
+  onAccess,
+  onDelete,
+  onContract,
+  onViewContract,
+}: {
+  member: TeamMember;
+  leadCount: number;
+  empContract?: Contract | null;
+  onEdit: () => void;
+  onAccess: () => void;
+  onDelete: () => void;
+  onContract: () => void;
+  onViewContract: (c: Contract) => void;
+}) {
+  const primaryRole = getPrimaryRole(member);
+  const roleConf = ROLE_CONFIG[primaryRole] ?? ROLE_CONFIG.sales;
 
-    // ── Grant Access dialog ─────────────────────────────────────────────────
-    const [isAccessOpen, setIsAccessOpen] = useState(false);
-    const [accessEmployee, setAccessEmployee] = useState<Employee | null>(null);
-    const [accessPassword, setAccessPassword] = useState("");
-    const [accessConfirm, setAccessConfirm] = useState("");
-    const [showPwd, setShowPwd] = useState(false);
-    const [showConfirm, setShowConfirm] = useState(false);
-    const [accessLoading, setAccessLoading] = useState(false);
-
-    // ── Snapshot ────────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (!tenant?.id) return;
-        const db = getDb();
-        // No orderBy — legacy docs use created_at (string) while new docs use
-        // joinedAt (serverTimestamp). Firestore excludes docs missing the ordered
-        // field, so omit ordering to show ALL employees.
-        const q = query(collection(db, `tenants/${tenant.id}/employees`));
-        const unsub = onSnapshot(q, (snap) => {
-            const list = snap.docs.map(d => {
-                const r = d.data();
-                return {
-                    id: d.id,
-                    name: r.full_name || r.fullName || r.name || "",
-                    email: r.email || "",
-                    area: r.area || "",
-                    phone: r.phone || "",
-                    totalWork: r.total_work || 0,
-                    currentWork: r.current_work || "None",
-                    upcomingWork: r.upcoming_work || "None",
-                    role: r.role_names?.[0] || r.roles?.[0] || r.role || "designer",
-                    roles: r.role_names || r.roles || (r.role ? [r.role] : []),
-                    primaryRole: r.role_names?.[0] || r.roles?.[0] || r.role || "designer",
-                    tenantId: r.tenant_id || r.tenantId || tenant.id,
-                    createdAt: r.created_at || r.createdAt,
-                    hasLoginAccess: !!(r.userId),
-                };
-            });
-            // Sort client-side: most recent first, falling back across field variants
-            list.sort((a, b) => {
-                const ta = a.createdAt ? new Date(a.createdAt?.toDate?.() ?? a.createdAt).getTime() : 0;
-                const tb = b.createdAt ? new Date(b.createdAt?.toDate?.() ?? b.createdAt).getTime() : 0;
-                return tb - ta;
-            });
-            setEmployees(list);
-            setLoading(false);
-        });
-        return () => unsub();
-    }, [tenant?.id]);
-
-    // ── Open Edit ────────────────────────────────────────────────────────────
-    const openEdit = (emp?: Employee) => {
-        if (emp) {
-            setEditingEmployee(emp);
-            setEditForm({
-                name: emp.name, email: emp.email, area: emp.area, phone: emp.phone,
-                totalWork: emp.totalWork, currentWork: emp.currentWork,
-                upcomingWork: emp.upcomingWork || "None",
-                primaryRole: emp.primaryRole || emp.role || "designer",
-                roles: emp.roles || (emp.role ? [emp.role] : ["designer"]),
-            });
-        } else {
-            setEditingEmployee(null);
-            setEditForm({
-                name: "", email: "", area: "", phone: "",
-                totalWork: 0, currentWork: "None", upcomingWork: "None",
-                primaryRole: "designer", roles: ["designer"],
-            });
-        }
-        setIsEditOpen(true);
-    };
-
-    // ── Open Grant Access ────────────────────────────────────────────────────
-    const openAccess = (emp: Employee) => {
-        setAccessEmployee(emp);
-        setAccessPassword("");
-        setAccessConfirm("");
-        setShowPwd(false);
-        setShowConfirm(false);
-        setIsAccessOpen(true);
-    };
-
-    // ── Submit Edit ──────────────────────────────────────────────────────────
-    const handleEditSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!tenant?.id) return;
-        try {
-            const db = getDb();
-            const payload = {
-                area: editForm.area,
-                total_work: editForm.totalWork,
-                current_work: editForm.currentWork,
-                upcoming_work: editForm.upcomingWork,
-                is_active: true,
-                name: editForm.name,
-                full_name: editForm.name,
-                email: editForm.email,
-                phone: editForm.phone,
-                role: editForm.primaryRole,
-                roles: editForm.roles,
-                role_names: editForm.roles,
-                tenant_id: tenant.id,
-            };
-
-            if (editingEmployee) {
-                await updateDoc(doc(db, `tenants/${tenant.id}/employees`, editingEmployee.id), payload);
-                toast({ title: "Success", description: "Employee updated successfully." });
-            } else {
-                await addDoc(collection(db, `tenants/${tenant.id}/employees`), {
-                    ...payload,
-                    created_at: new Date().toISOString(),
-                });
-                toast({ title: "Employee added", description: "Use the key icon to grant login access." });
-            }
-            setIsEditOpen(false);
-        } catch {
-            toast({ title: "Error", description: "Failed to save employee.", variant: "destructive" });
-        }
-    };
-
-    // ── Submit Grant Access ──────────────────────────────────────────────────
-    const handleGrantAccess = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!tenant?.id || !accessEmployee) return;
-
-        if (accessPassword.length < 6) {
-            toast({ title: "Password too short", description: "Password must be at least 6 characters.", variant: "destructive" });
-            return;
-        }
-        if (accessPassword !== accessConfirm) {
-            toast({ title: "Passwords don't match", description: "Please make sure both passwords are the same.", variant: "destructive" });
-            return;
-        }
-
-        setAccessLoading(true);
-        try {
-            const idToken = await getFirebaseAuth().currentUser?.getIdToken();
-            const res = await fetch("/api/auth/set-employee-password", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${idToken}`,
-                },
-                body: JSON.stringify({
-                    tenantId: tenant.id,
-                    email: accessEmployee.email,
-                    password: accessPassword,
-                }),
-            });
-            const result = await res.json();
-            if (!res.ok) {
-                toast({ title: "Failed", description: result.error || "Could not grant access.", variant: "destructive" });
-                return;
-            }
-            toast({
-                title: result.created ? "Access granted!" : "Password updated!",
-                description: result.created
-                    ? `${accessEmployee.name} can now log in with their email and the new password.`
-                    : `${accessEmployee.name}'s password has been updated.`,
-            });
-            setIsAccessOpen(false);
-        } catch {
-            toast({ title: "Error", description: "Something went wrong.", variant: "destructive" });
-        } finally {
-            setAccessLoading(false);
-        }
-    };
-
-    // ── Delete ───────────────────────────────────────────────────────────────
-    const handleDelete = async (id: string) => {
-        if (!tenant?.id || !confirm("Remove this team member?")) return;
-        try {
-            await deleteDoc(doc(getDb(), `tenants/${tenant.id}/employees`, id));
-            toast({ title: "Removed", description: "Team member removed." });
-        } catch {
-            toast({ title: "Error", description: "Failed to remove.", variant: "destructive" });
-        }
-    };
-
-    if (authLoading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin" /></div>;
-
-    return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Employees</h1>
-                    <p className="text-muted-foreground">Manage your team members and assign tasks.</p>
-                </div>
-                <Button onClick={() => openEdit()} className="bg-[#0F172A]">
-                    <Plus className="mr-2 h-4 w-4" /> Add Employee
-                </Button>
+  return (
+    <div className={`group relative bg-white rounded-[14px] border border-[rgba(0,0,0,0.08)] overflow-hidden hover:border-[rgba(0,0,0,0.16)] hover:shadow-[var(--shadow-hover)] transition-all duration-200 ${roleConf.topBorder}`}>
+      {/* Body */}
+      <div className="px-4 pt-4 pb-12">
+        <div className="flex items-start gap-3 mb-3">
+          <div
+            className={`h-12 w-12 rounded-full bg-gradient-to-br ${roleConf.avatar} flex items-center justify-center text-white font-bold text-base shrink-0`}
+          >
+            {getInitials(member.fullName || "?")}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-bold text-[#0A0A0A] text-[15px] leading-tight truncate">
+                {member.fullName}
+              </h3>
+              <span
+                className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${roleConf.pill}`}
+              >
+                {roleConf.label}
+              </span>
             </div>
-
-            {/* ── Table ── */}
-            <div className="rounded-md border bg-white">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Role</TableHead>
-                            <TableHead>Area</TableHead>
-                            <TableHead>Phone</TableHead>
-                            <TableHead>Current Work</TableHead>
-                            <TableHead>Login Access</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {loading ? (
-                            <TableRow>
-                                <TableCell colSpan={7} className="h-24 text-center">
-                                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                                </TableCell>
-                            </TableRow>
-                        ) : employees.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                                    No employees found. Add one to get started.
-                                </TableCell>
-                            </TableRow>
-                        ) : (
-                            employees.map((emp) => (
-                                <TableRow key={emp.id}>
-                                    <TableCell className="font-medium">
-                                        <div>{emp.name}</div>
-                                        <div className="text-xs text-gray-400">{emp.email}</div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex flex-wrap gap-1">
-                                            {(emp.roles || [emp.role || "designer"]).map((r) => (
-                                                <Badge key={r} variant="secondary" className="text-xs capitalize">
-                                                    {r?.replace(/_/g, " ")}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>{emp.area}</TableCell>
-                                    <TableCell>{emp.phone}</TableCell>
-                                    <TableCell>
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${emp.currentWork !== "None" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`}>
-                                            {emp.currentWork}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell>
-                                        {emp.hasLoginAccess ? (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-                                                <ShieldCheck className="h-3 w-3" />
-                                                Active
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200">
-                                                <ShieldOff className="h-3 w-3" />
-                                                No Access
-                                            </span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-1">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                title={emp.hasLoginAccess ? "Manage / Reset Password" : "Grant Login Access"}
-                                                className={emp.hasLoginAccess ? "text-green-600 hover:text-green-700 hover:bg-green-50" : "text-amber-600 hover:text-amber-700 hover:bg-amber-50"}
-                                                onClick={() => openAccess(emp)}
-                                            >
-                                                <KeyRound className="h-4 w-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" onClick={() => openEdit(emp)}>
-                                                <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost" size="sm"
-                                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                                                onClick={() => handleDelete(emp.id)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
-            </div>
-
-            {/* ── Edit / Add Employee Dialog ── */}
-            <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-                <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                        <DialogTitle>{editingEmployee ? "Edit Employee" : "Add New Employee"}</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleEditSubmit} className="space-y-4 pt-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="name">Full Name</Label>
-                                <Input id="name" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="area">Area/Location</Label>
-                                <Input id="area" value={editForm.area} onChange={(e) => setEditForm({ ...editForm, area: e.target.value })} required />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="phone">Phone Number</Label>
-                            <Input id="phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} required />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="email">Email (Login ID)</Label>
-                            <Input id="email" type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} required />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="primaryRole">Primary Role</Label>
-                            <Select
-                                value={editForm.primaryRole}
-                                onValueChange={(value) => {
-                                    const newRoles = editForm.roles.includes(value) ? editForm.roles : [...editForm.roles, value];
-                                    setEditForm({ ...editForm, primaryRole: value, roles: newRoles });
-                                }}
-                            >
-                                <SelectTrigger><SelectValue placeholder="Select role..." /></SelectTrigger>
-                                <SelectContent>
-                                    {ROLE_OPTIONS.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Additional Roles</Label>
-                            <div className="flex flex-wrap gap-2">
-                                {ROLE_OPTIONS.filter(o => o.value !== editForm.primaryRole).map((opt) => {
-                                    const isSel = editForm.roles.includes(opt.value);
-                                    return (
-                                        <button
-                                            key={opt.value} type="button"
-                                            onClick={() => {
-                                                const nr = isSel ? editForm.roles.filter(r => r !== opt.value) : [...editForm.roles, opt.value];
-                                                setEditForm({ ...editForm, roles: nr });
-                                            }}
-                                            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${isSel ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}
-                                        >
-                                            {opt.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="totalWork">Total Works</Label>
-                                <Input id="totalWork" type="number" value={editForm.totalWork} onChange={(e) => setEditForm({ ...editForm, totalWork: parseInt(e.target.value) || 0 })} />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="currentWork">Current Work</Label>
-                                <Input id="currentWork" value={editForm.currentWork} onChange={(e) => setEditForm({ ...editForm, currentWork: e.target.value })} />
-                            </div>
-                        </div>
-                        {!editingEmployee && (
-                            <p className="text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                                After adding, click the <KeyRound className="inline h-3 w-3" /> key icon to grant this employee login access.
-                            </p>
-                        )}
-                        <div className="flex justify-end gap-2 pt-2">
-                            <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
-                            <Button type="submit" className="bg-[#0F172A]">{editingEmployee ? "Update Employee" : "Add Employee"}</Button>
-                        </div>
-                    </form>
-                </DialogContent>
-            </Dialog>
-
-            {/* ── Grant / Reset Access Dialog ── */}
-            <Dialog open={isAccessOpen} onOpenChange={setIsAccessOpen}>
-                <DialogContent className="sm:max-w-[380px]">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <KeyRound className="h-4 w-4 text-amber-600" />
-                            {accessEmployee?.hasLoginAccess ? "Manage Login Access" : "Grant Login Access"}
-                        </DialogTitle>
-                    </DialogHeader>
-
-                    {accessEmployee && (
-                        <form onSubmit={handleGrantAccess} className="space-y-5 pt-2">
-                            {/* Employee info card */}
-                            <div className="bg-gray-50 rounded-lg px-4 py-3 flex items-center gap-3">
-                                <div className="h-9 w-9 rounded-full bg-[#0F172A] flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                                    {accessEmployee.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-900">{accessEmployee.name}</p>
-                                    <p className="text-xs text-gray-500">{accessEmployee.email}</p>
-                                </div>
-                                <div className="ml-auto">
-                                    {accessEmployee.hasLoginAccess ? (
-                                        <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                                            <ShieldCheck className="h-3 w-3" /> Active
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">
-                                            <ShieldOff className="h-3 w-3" /> No Access
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label htmlFor="acc-pwd">
-                                    {accessEmployee.hasLoginAccess ? "New Password" : "Create Password"}
-                                </Label>
-                                <div className="relative">
-                                    <Input
-                                        id="acc-pwd"
-                                        type={showPwd ? "text" : "password"}
-                                        autoComplete="new-password"
-                                        placeholder="Minimum 6 characters"
-                                        value={accessPassword}
-                                        onChange={(e) => setAccessPassword(e.target.value)}
-                                        required
-                                        minLength={6}
-                                        className="pr-10"
-                                    />
-                                    <button type="button" tabIndex={-1} onClick={() => setShowPwd(!showPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                                        {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label htmlFor="acc-confirm">Confirm Password</Label>
-                                <div className="relative">
-                                    <Input
-                                        id="acc-confirm"
-                                        type={showConfirm ? "text" : "password"}
-                                        autoComplete="new-password"
-                                        placeholder="Re-enter password"
-                                        value={accessConfirm}
-                                        onChange={(e) => setAccessConfirm(e.target.value)}
-                                        required
-                                        className="pr-10"
-                                    />
-                                    <button type="button" tabIndex={-1} onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                                        {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    </button>
-                                </div>
-                                {accessConfirm && accessPassword !== accessConfirm && (
-                                    <p className="text-xs text-red-500">Passwords don&apos;t match.</p>
-                                )}
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-1">
-                                <Button type="button" variant="outline" onClick={() => setIsAccessOpen(false)}>Cancel</Button>
-                                <Button
-                                    type="submit"
-                                    disabled={accessLoading || !accessPassword || accessPassword !== accessConfirm}
-                                    className="bg-green-600 hover:bg-green-700 text-white gap-2"
-                                >
-                                    {accessLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                                    {accessEmployee.hasLoginAccess ? "Update Password" : "Grant Access"}
-                                </Button>
-                            </div>
-                        </form>
-                    )}
-                </DialogContent>
-            </Dialog>
+            {member.phone && (
+              <p className="text-[12px] text-[#8A8A8A] flex items-center gap-1 mt-1">
+                <Phone className="h-3 w-3" />
+                {member.phone}
+              </p>
+            )}
+            <p className="text-[12px] text-[#8A8A8A] flex items-center gap-1 mt-0.5 truncate">
+              <Mail className="h-3 w-3 shrink-0" />
+              {member.email}
+            </p>
+          </div>
         </div>
+        {member.area && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-black/[0.04] text-[#8A8A8A] rounded text-[11px]">
+            <MapPin className="h-3 w-3" />
+            {member.area}
+          </span>
+        )}
+        <div className="flex items-center gap-3 mt-2 text-[12px] text-[#8A8A8A]">
+          <span>{leadCount} lead{leadCount !== 1 ? "s" : ""}</span>
+          <span>·</span>
+          <span className={`flex items-center gap-1 ${member.isActive ? "text-[#1A7A47]" : "text-[#8A8A8A]"}`}>
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${member.isActive ? "bg-[#1A7A47]" : "bg-[#C8C8C8]"}`} />
+            {member.isActive ? "Active" : "Inactive"}
+          </span>
+        </div>
+      </div>
+      {/* Hover action bar */}
+      <div className="absolute bottom-0 left-0 right-0 flex border-t border-black/[0.06] bg-white/95 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={onEdit}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#3D3D3D] hover:bg-black/[0.03] transition-colors"
+        >
+          <Edit className="h-3.5 w-3.5" /> Edit
+        </button>
+        <button
+          onClick={onAccess}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#A0700A] hover:bg-[#FFF8E8] transition-colors border-x border-black/[0.06]"
+        >
+          <KeyRound className="h-3.5 w-3.5" /> Access
+        </button>
+        {empContract ? (
+          <button
+            onClick={() => onViewContract(empContract)}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-xs text-[#4B56D2] hover:bg-[#EEF2FF] transition-colors border-x border-black/[0.06]"
+          >
+            <FileSignature className="h-3.5 w-3.5" />
+            <ContractStatusBadge status={empContract.status} showDot={false} className="text-[9px]" />
+          </button>
+        ) : (
+          <button
+            onClick={onContract}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#8A8A8A] hover:text-[#4B56D2] hover:bg-[#EEF2FF] transition-colors border-x border-black/[0.06]"
+          >
+            <FileSignature className="h-3.5 w-3.5" /> Contract
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          disabled={member.isOwner}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-[#B83232] hover:bg-[#FFF0F0] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── TableView ───────────────────────────────────────────────────────────────
+
+function TableView({
+  members,
+  leadCountMap,
+  contractByEmployeeId,
+  onEdit,
+  onAccess,
+  onDelete,
+  onToggleActive,
+  onContract,
+  onViewContract,
+}: {
+  members: TeamMember[];
+  leadCountMap: Record<string, number>;
+  contractByEmployeeId: Map<string, Contract>;
+  onEdit: (m: TeamMember) => void;
+  onAccess: (m: TeamMember) => void;
+  onDelete: (m: TeamMember) => void;
+  onToggleActive: (m: TeamMember) => void;
+  onContract: (m: TeamMember) => void;
+  onViewContract: (c: Contract) => void;
+}) {
+  return (
+    <div className="rounded-xl border bg-white overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-gray-50">
+            <TableHead>Employee</TableHead>
+            <TableHead>Role</TableHead>
+            <TableHead>Contact</TableHead>
+            <TableHead>Area</TableHead>
+            <TableHead>Leads</TableHead>
+            <TableHead>Login Access</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {members.map((m) => {
+            const primaryRole = getPrimaryRole(m);
+            const roleConf = ROLE_CONFIG[primaryRole] ?? ROLE_CONFIG.sales;
+            const lc = leadCountMap[m.userId] ?? 0;
+            return (
+              <TableRow key={m.id} className="group">
+                <TableCell>
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`h-8 w-8 rounded-full bg-gradient-to-br ${roleConf.avatar} flex items-center justify-center text-white text-xs font-bold shrink-0`}
+                    >
+                      {getInitials(m.fullName || "?")}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">
+                        {m.fullName}
+                      </p>
+                      <p className="text-xs text-gray-400">{m.email}</p>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <span
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${roleConf.pill}`}
+                  >
+                    {roleConf.label}
+                  </span>
+                </TableCell>
+                <TableCell className="text-sm text-gray-600">
+                  {m.phone || "—"}
+                </TableCell>
+                <TableCell className="text-sm text-gray-600">
+                  {m.area || "—"}
+                </TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                    {lc}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  {m.userId ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                      <ShieldCheck className="h-3 w-3" /> Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">
+                      <ShieldOff className="h-3 w-3" /> No Access
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Switch
+                    checked={m.isActive}
+                    onCheckedChange={() => onToggleActive(m)}
+                    disabled={m.isOwner}
+                  />
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(m)}
+                      className="h-7 px-2"
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onAccess(m)}
+                      className="h-7 px-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                    </Button>
+                    {(() => {
+                      const empContract = contractByEmployeeId.get(m.id);
+                      return empContract ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onViewContract(empContract)}
+                          className="h-7 px-2 text-[#4B56D2] hover:bg-[#EEF2FF]"
+                          title="View Contract"
+                        >
+                          <FileSignature className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onContract(m)}
+                          className="h-7 px-2 text-[#8A8A8A] hover:text-[#4B56D2] hover:bg-[#EEF2FF]"
+                          title="Create Contract"
+                        >
+                          <FileSignature className="h-3.5 w-3.5" />
+                        </Button>
+                      );
+                    })()}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onDelete(m)}
+                      disabled={m.isOwner}
+                      className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+// ─── AddEditDrawer ───────────────────────────────────────────────────────────
+
+type FormState = {
+  fullName: string;
+  email: string;
+  phone: string;
+  area: string;
+  roles: string[];
+};
+
+function AddEditDrawer({
+  open,
+  isEdit,
+  member,
+  form,
+  setForm,
+  saving,
+  onSave,
+  onClose,
+}: {
+  open: boolean;
+  isEdit: boolean;
+  member: TeamMember | null;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  saving: boolean;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  const toggleRole = (role: string) => {
+    if (form.roles.includes(role)) {
+      if (form.roles.length === 1) return; // must keep at least one
+      setForm((f) => ({ ...f, roles: f.roles.filter((r) => r !== role) }));
+    } else {
+      setForm((f) => ({ ...f, roles: [...f.roles, role] }));
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md sm:mr-0 sm:ml-auto sm:h-screen sm:rounded-l-2xl sm:rounded-r-none p-0 overflow-y-auto">
+        <div className="p-6 space-y-5">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">
+              {isEdit
+                ? `Edit ${member?.fullName ?? "Member"}`
+                : "Add Team Member"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="add-name">Full Name *</Label>
+            <Input
+              id="add-name"
+              placeholder="e.g. Priya Sharma"
+              value={form.fullName}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, fullName: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="add-email">Email *</Label>
+            <Input
+              id="add-email"
+              type="email"
+              placeholder="e.g. priya@example.com"
+              value={form.email}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, email: e.target.value }))
+              }
+              disabled={isEdit && !!member?.userId}
+            />
+            {isEdit && !!member?.userId && (
+              <p className="text-xs text-gray-400">
+                Email cannot be changed after login access is granted.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="add-phone">Phone</Label>
+            <Input
+              id="add-phone"
+              placeholder="e.g. +91 98765 43210"
+              value={form.phone}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, phone: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="add-area">Area / Territory</Label>
+            <Input
+              id="add-area"
+              placeholder="e.g. Mumbai West"
+              value={form.area}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, area: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>
+              Roles *{" "}
+              <span className="text-xs text-gray-400 font-normal">
+                (select at least one)
+              </span>
+            </Label>
+            <div className="space-y-2">
+              {ROLE_OPTIONS.map((role) => {
+                const conf = ROLE_CONFIG[role];
+                const selected = form.roles.includes(role);
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => toggleRole(role)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
+                      selected
+                        ? "border-gray-900 bg-gray-900 text-white"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>{conf.icon}</span>
+                      {conf.label}
+                    </span>
+                    {selected && <Check className="h-4 w-4" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {!isEdit && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+              <KeyRound className="h-3 w-3 shrink-0" />
+              After adding, use the key icon to grant this employee login
+              access.
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" onClick={onClose} className="flex-1">
+              Cancel
+            </Button>
+            <Button
+              onClick={onSave}
+              disabled={
+                saving ||
+                !form.fullName ||
+                !form.email ||
+                form.roles.length === 0
+              }
+              className="flex-1 bg-gray-900 text-white hover:bg-gray-800"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              {isEdit ? "Save Changes" : "Add Employee"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── AccessModal ─────────────────────────────────────────────────────────────
+
+function AccessModal({
+  member,
+  password,
+  confirmPwd,
+  showPwd,
+  showConfirmPwd,
+  saving,
+  success,
+  tenantDomain,
+  onGrant,
+  onClose,
+  onPasswordChange,
+  onConfirmChange,
+  onTogglePwd,
+  onToggleConfirmPwd,
+}: {
+  member: TeamMember | null;
+  password: string;
+  confirmPwd: string;
+  showPwd: boolean;
+  showConfirmPwd: boolean;
+  saving: boolean;
+  success: boolean;
+  tenantDomain: string;
+  onGrant: () => void;
+  onClose: () => void;
+  onPasswordChange: (v: string) => void;
+  onConfirmChange: (v: string) => void;
+  onTogglePwd: () => void;
+  onToggleConfirmPwd: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const loginUrl = `${tenantDomain}/dashboard`;
+  const hasAccess = !!member?.userId;
+
+  const copyUrl = () => {
+    navigator.clipboard.writeText(loginUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Dialog
+      open={!!member}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-amber-600" />
+            {hasAccess ? "Manage Login Access" : "Grant Login Access"}
+          </DialogTitle>
+        </DialogHeader>
+
+        {member && !success && (
+          <div className="space-y-4 pt-1">
+            {/* Employee info */}
+            <div className="bg-gray-50 rounded-lg px-3 py-2.5 flex items-center gap-3">
+              {(() => {
+                const primaryRole = getPrimaryRole(member);
+                const roleConf = ROLE_CONFIG[primaryRole] ?? ROLE_CONFIG.sales;
+                return (
+                  <div
+                    className={`h-9 w-9 rounded-full bg-gradient-to-br ${roleConf.avatar} flex items-center justify-center text-white text-sm font-bold shrink-0`}
+                  >
+                    {getInitials(member.fullName || "?")}
+                  </div>
+                );
+              })()}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {member.fullName}
+                </p>
+                <p className="text-xs text-gray-500 truncate">{member.email}</p>
+              </div>
+              {hasAccess ? (
+                <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">
+                  <ShieldCheck className="h-3 w-3" /> Active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full shrink-0">
+                  <ShieldOff className="h-3 w-3" /> No Access
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="modal-pwd">
+                {hasAccess ? "New Password" : "Create Password"}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="modal-pwd"
+                  type={showPwd ? "text" : "password"}
+                  placeholder="Minimum 6 characters"
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(e) => onPasswordChange(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={onTogglePwd}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPwd ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="modal-confirm">Confirm Password</Label>
+              <div className="relative">
+                <Input
+                  id="modal-confirm"
+                  type={showConfirmPwd ? "text" : "password"}
+                  placeholder="Re-enter password"
+                  autoComplete="new-password"
+                  value={confirmPwd}
+                  onChange={(e) => onConfirmChange(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={onToggleConfirmPwd}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showConfirmPwd ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              {confirmPwd && password !== confirmPwd && (
+                <p className="text-xs text-red-500">
+                  Passwords don&apos;t match.
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" onClick={onClose} className="flex-1">
+                Cancel
+              </Button>
+              <Button
+                onClick={onGrant}
+                disabled={
+                  saving || password.length < 6 || password !== confirmPwd
+                }
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              >
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4 mr-1" />
+                )}
+                {hasAccess ? "Update Password" : "Grant Access"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Success state */}
+        {member && success && (
+          <div className="space-y-4 pt-1">
+            <div className="flex flex-col items-center text-center gap-2 py-2">
+              <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+                <Check className="h-6 w-6 text-green-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900">Access Granted!</h3>
+              <p className="text-sm text-gray-500">
+                {member.fullName} can now log in with their email.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500">Login URL</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-gray-100 text-gray-700 text-xs rounded-lg px-3 py-2 truncate font-mono">
+                  {loginUrl}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={copyUrl}
+                  className="shrink-0"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <Button
+              onClick={onClose}
+              className="w-full bg-gray-900 text-white hover:bg-gray-800"
+            >
+              Done
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── DeleteDialog ─────────────────────────────────────────────────────────────
+
+function DeleteDialog({
+  member,
+  saving,
+  onDelete,
+  onClose,
+}: {
+  member: TeamMember | null;
+  saving: boolean;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      open={!!member}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-gray-900">
+            Remove {member?.fullName}?
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-gray-500 mt-1">
+          This will deactivate their account and remove them from your active
+          team. This cannot be undone.
+        </p>
+        <div className="flex gap-2 mt-4">
+          <Button variant="outline" onClick={onClose} className="flex-1">
+            Cancel
+          </Button>
+          <Button
+            onClick={onDelete}
+            disabled={saving}
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+            Remove
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function EmployeesPage() {
+  const { tenant } = useTenantAuth();
+  const { toast } = useToast();
+  const tenantId = tenant?.id ?? null;
+
+  const { members, loading, addMember, updateMember, removeMember } =
+    useTeam(tenantId);
+  const { leads } = useLeads(tenantId);
+
+  // View & filter
+  const [view, setView] = useState<"cards" | "table">("cards");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Add / Edit
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editMember, setEditMember] = useState<TeamMember | null>(null);
+  const [form, setForm] = useState<FormState>({
+    fullName: "",
+    email: "",
+    phone: "",
+    area: "",
+    roles: ["sales"],
+  });
+  const [formSaving, setFormSaving] = useState(false);
+
+  // Access
+  const [accessMember, setAccessMember] = useState<TeamMember | null>(null);
+  const [password, setPassword] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [accessSuccess, setAccessSuccess] = useState(false);
+
+  // Delete
+  const [deleteMember, setDeleteMember] = useState<TeamMember | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+
+  // Contracts
+  const { contracts } = useContracts(tenantId);
+  const [createContractMember, setCreateContractMember] = useState<TeamMember | null>(null);
+  const [detailContract, setDetailContract] = useState<Contract | null>(null);
+
+  const contractByEmployeeId = useMemo(() => {
+    const map = new Map<string, Contract>();
+    for (const c of contracts) {
+      if (c.type === "employee") {
+        const cf = c.customFields as EmployeeContractFields;
+        if (cf?.employeeId) map.set(cf.employeeId, c);
+      }
+    }
+    return map;
+  }, [contracts]);
+
+  // Derived
+  const leadCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    leads.forEach((l) => {
+      if (l.assignedTo) map[l.assignedTo] = (map[l.assignedTo] ?? 0) + 1;
+    });
+    return map;
+  }, [leads]);
+
+  const filteredMembers = useMemo(
+    () =>
+      members.filter((m) => {
+        if (
+          roleFilter !== "all" &&
+          !m.roles.includes(roleFilter) &&
+          !(roleFilter === "owner" && m.isOwner)
+        )
+          return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          if (
+            ![m.fullName, m.email, m.phone, m.area].some((f) =>
+              f?.toLowerCase().includes(q)
+            )
+          )
+            return false;
+        }
+        return true;
+      }),
+    [members, roleFilter, searchQuery]
+  );
+
+  const activeCount = members.filter((m) => m.isActive).length;
+  const totalLeads = leads.filter((l) => !!l.assignedTo).length;
+
+  const roleBreakdown = useMemo(() => {
+    const parts: string[] = [];
+    ["sales", "designer", "site_supervisor"].forEach((r) => {
+      const c = members.filter((m) => m.roles.includes(r)).length;
+      if (c) parts.push(`${c} ${ROLE_CONFIG[r].label}`);
+    });
+    return parts.join(", ") || "No roles";
+  }, [members]);
+
+  // Handlers
+  const openAdd = () => {
+    setForm({ fullName: "", email: "", phone: "", area: "", roles: ["sales"] });
+    setIsAddOpen(true);
+  };
+
+  const openEdit = (m: TeamMember) => {
+    setEditMember(m);
+    setForm({
+      fullName: m.fullName,
+      email: m.email,
+      phone: m.phone || "",
+      area: m.area || "",
+      roles: [...m.roles],
+    });
+  };
+
+  const openAccess = (m: TeamMember) => {
+    setAccessMember(m);
+    setPassword("");
+    setConfirmPwd("");
+    setShowPwd(false);
+    setShowConfirmPwd(false);
+    setAccessSuccess(false);
+  };
+
+  const handleSave = async () => {
+    if (!form.fullName || !form.email) return;
+    setFormSaving(true);
+    try {
+      if (editMember) {
+        await updateMember(editMember.id, {
+          fullName: form.fullName,
+          phone: form.phone,
+          area: form.area,
+          roles: form.roles,
+        });
+        toast({ title: "Updated", description: `${form.fullName} updated.` });
+        setEditMember(null);
+      } else {
+        await addMember({
+          fullName: form.fullName,
+          email: form.email,
+          phone: form.phone,
+          area: form.area,
+          roles: form.roles,
+        });
+        toast({
+          title: "Employee added",
+          description: "Use the 🔑 key icon to grant login access.",
+        });
+        setIsAddOpen(false);
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    } finally {
+      setFormSaving(false);
+    }
+  };
+
+  const handleToggleActive = async (m: TeamMember) => {
+    await updateMember(m.id, { isActive: !m.isActive });
+    toast({ title: m.isActive ? "Deactivated" : "Activated" });
+  };
+
+  const handleDelete = async () => {
+    if (!deleteMember) return;
+    setDeleteSaving(true);
+    try {
+      await removeMember(deleteMember.id);
+      toast({
+        title: "Removed",
+        description: `${deleteMember.fullName} removed from your team.`,
+      });
+      setDeleteMember(null);
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
+
+  const handleGrantAccess = async () => {
+    if (!accessMember || password.length < 6 || password !== confirmPwd) return;
+    setAccessSaving(true);
+    try {
+      const idToken = await getFirebaseAuth().currentUser?.getIdToken();
+      const res = await fetch("/api/auth/set-employee-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          tenantId,
+          email: accessMember.email,
+          password,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setAccessSuccess(true);
+      toast({ title: data.created ? "Access granted!" : "Password updated!" });
+    } catch (e: unknown) {
+      toast({
+        title: "Failed",
+        description: e instanceof Error ? e.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  // Loading skeleton
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-7 w-36 bg-gray-200 rounded-lg animate-pulse" />
+            <div className="h-4 w-56 bg-gray-100 rounded animate-pulse" />
+          </div>
+          <div className="h-9 w-32 bg-gray-200 rounded-lg animate-pulse" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-52 bg-gray-100 rounded-2xl animate-pulse"
+            />
+          ))}
+        </div>
+      </div>
     );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* 1. HEADER */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-[20px] font-bold text-[#0A0A0A] flex items-center gap-2">
+            Team
+            <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded text-[11px] font-semibold bg-black/[0.06] text-[#3D3D3D]">
+              {members.length}
+            </span>
+          </h1>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* View toggle */}
+          <div className="flex items-center border border-black/[0.08] rounded-lg p-0.5 gap-0.5 bg-white">
+            <button
+              onClick={() => setView("cards")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                view === "cards"
+                  ? "bg-[#0A0A0A] text-white"
+                  : "text-[#8A8A8A] hover:text-[#0A0A0A]"
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> Cards
+            </button>
+            <button
+              onClick={() => setView("table")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                view === "table"
+                  ? "bg-[#0A0A0A] text-white"
+                  : "text-[#8A8A8A] hover:text-[#0A0A0A]"
+              }`}
+            >
+              <List className="h-3.5 w-3.5" /> Table
+            </button>
+          </div>
+          <Button
+            onClick={openAdd}
+            className="bg-[#0A0A0A] text-white hover:bg-[#1A1A1A] gap-1.5"
+          >
+            <Plus className="h-4 w-4" /> Add Member
+          </Button>
+        </div>
+      </div>
+
+      {/* 2. FILTER TABS + SEARCH */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1">
+          {FILTER_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setRoleFilter(tab.value)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                roleFilter === tab.value
+                  ? "bg-[#0A0A0A] text-white"
+                  : "text-[#8A8A8A] hover:text-[#0A0A0A]"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="relative w-60">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8A8A8A]" />
+          <Input
+            placeholder="Search team..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 text-sm border-black/[0.08]"
+          />
+        </div>
+      </div>
+
+      {/* 3. STATS ROW */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {(
+          [
+            { label: "Total", value: members.length, icon: "👥", small: false },
+            { label: "Active Now", value: activeCount, icon: "✅", small: false },
+            { label: "Roles", value: roleBreakdown, icon: "🏷️", small: true },
+            {
+              label: "Leads Assigned",
+              value: totalLeads,
+              icon: "📋",
+              small: false,
+            },
+          ] as const
+        ).map((stat) => (
+          <div
+            key={stat.label}
+            className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex items-center gap-3"
+          >
+            <span className="text-xl">{stat.icon}</span>
+            <div>
+              <p className="text-xs text-gray-400">{stat.label}</p>
+              <p
+                className={`font-bold text-gray-900 ${
+                  stat.small ? "text-sm leading-tight" : "text-lg"
+                }`}
+              >
+                {stat.value}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 4. CONTENT */}
+      {members.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
+            <Users className="h-8 w-8 text-gray-400" />
+          </div>
+          <div className="text-center">
+            <h3 className="font-semibold text-gray-900">
+              No team members yet
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Add your first employee to get started.
+            </p>
+          </div>
+          <Button
+            onClick={openAdd}
+            className="bg-gray-900 text-white hover:bg-gray-800 gap-1.5"
+          >
+            <Plus className="h-4 w-4" /> Add Employee
+          </Button>
+        </div>
+      ) : filteredMembers.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-2">
+          <p className="text-gray-400 text-sm">
+            No employees match your filters.
+          </p>
+          <button
+            onClick={() => {
+              setRoleFilter("all");
+              setSearchQuery("");
+            }}
+            className="text-xs text-gray-500 underline hover:text-gray-700"
+          >
+            Clear filters
+          </button>
+        </div>
+      ) : view === "cards" ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredMembers.map((m) => (
+            <EmployeeCard
+              key={m.id}
+              member={m}
+              leadCount={leadCountMap[m.userId] ?? 0}
+              empContract={contractByEmployeeId.get(m.id) ?? null}
+              onEdit={() => openEdit(m)}
+              onAccess={() => openAccess(m)}
+              onDelete={() => setDeleteMember(m)}
+              onContract={() => setCreateContractMember(m)}
+              onViewContract={(c) => setDetailContract(c)}
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          members={filteredMembers}
+          leadCountMap={leadCountMap}
+          contractByEmployeeId={contractByEmployeeId}
+          onEdit={openEdit}
+          onAccess={openAccess}
+          onDelete={(m) => setDeleteMember(m)}
+          onToggleActive={handleToggleActive}
+          onContract={(m) => setCreateContractMember(m)}
+          onViewContract={(c) => setDetailContract(c)}
+        />
+      )}
+
+      {/* 5. ADD / EDIT DRAWER */}
+      <AddEditDrawer
+        open={isAddOpen || !!editMember}
+        isEdit={!!editMember}
+        member={editMember}
+        form={form}
+        setForm={setForm}
+        saving={formSaving}
+        onSave={handleSave}
+        onClose={() => {
+          setIsAddOpen(false);
+          setEditMember(null);
+        }}
+      />
+
+      {/* 6. ACCESS MODAL */}
+      <AccessModal
+        member={accessMember}
+        password={password}
+        confirmPwd={confirmPwd}
+        showPwd={showPwd}
+        showConfirmPwd={showConfirmPwd}
+        saving={accessSaving}
+        success={accessSuccess}
+        tenantDomain={
+          typeof window !== "undefined" ? window.location.origin : ""
+        }
+        onGrant={handleGrantAccess}
+        onClose={() => {
+          setAccessMember(null);
+          setPassword("");
+          setConfirmPwd("");
+          setAccessSuccess(false);
+        }}
+        onPasswordChange={setPassword}
+        onConfirmChange={setConfirmPwd}
+        onTogglePwd={() => setShowPwd((v) => !v)}
+        onToggleConfirmPwd={() => setShowConfirmPwd((v) => !v)}
+      />
+
+      {/* 7. DELETE DIALOG */}
+      <DeleteDialog
+        member={deleteMember}
+        saving={deleteSaving}
+        onDelete={handleDelete}
+        onClose={() => setDeleteMember(null)}
+      />
+
+      {/* 8. CONTRACT DRAWERS */}
+      {tenantId && (
+        <>
+          <CreateEmployeeContractDrawer
+            open={!!createContractMember}
+            onClose={() => setCreateContractMember(null)}
+            tenantId={tenantId}
+            partyAName={tenant?.name ?? ""}
+            partyAEmail=""
+            prefill={{
+              employeeId:  createContractMember?.id,
+              partyBName:  createContractMember?.fullName,
+              partyBEmail: createContractMember?.email,
+              partyBPhone: createContractMember?.phone,
+              designation: createContractMember?.roles?.[0],
+              joiningDate: createContractMember?.joinedAt,
+              title: createContractMember?.fullName
+                ? `Employment Agreement – ${createContractMember.fullName}`
+                : undefined,
+            }}
+            onCreated={() => setCreateContractMember(null)}
+          />
+          <ContractDetailDrawer
+            contract={detailContract}
+            tenantId={tenantId}
+            onClose={() => setDetailContract(null)}
+            onUpdated={() => {}}
+          />
+        </>
+      )}
+    </div>
+  );
 }

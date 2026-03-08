@@ -15,13 +15,5 @@ export default function PricingPage() {
         );
     }
 
-    return (
-        <div className="space-y-6 pb-16">
-            <div>
-                <h2 className="text-3xl font-bold tracking-tight">Pricing & Configuration</h2>
-                <p className="text-muted-foreground">Manage your pricing tiers and categories</p>
-            </div>
-            <PricingConfigEditor tenantId={tenant.id} />
-        </div>
-    );
+    return <PricingConfigEditor tenantId={tenant.id} />;
 }

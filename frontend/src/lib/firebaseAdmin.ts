@@ -6,6 +6,7 @@ import {
 } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getStorage, type Storage } from "firebase-admin/storage";
 
 let _adminApp: App | null = null;
 
@@ -16,9 +17,10 @@ function ensureAdminApp(): App {
     } else {
       // Primary: full service account JSON (JSON.parse handles newlines automatically)
       const jsonEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
       if (jsonEnv) {
         const serviceAccount = JSON.parse(jsonEnv);
-        _adminApp = initializeApp({ credential: cert(serviceAccount) });
+        _adminApp = initializeApp({ credential: cert(serviceAccount), storageBucket });
       } else {
         // Fallback: individual env vars (strip wrapping quotes if present)
         _adminApp = initializeApp({
@@ -29,6 +31,7 @@ function ensureAdminApp(): App {
               ?.replace(/^"|"$/g, "")
               .replace(/\\n/g, "\n"),
           }),
+          storageBucket,
         });
       }
     }
@@ -42,4 +45,8 @@ export function getAdminAuth(): Auth {
 
 export function getAdminDb(): Firestore {
   return getFirestore(ensureAdminApp());
+}
+
+export function getAdminStorage(): Storage {
+  return getStorage(ensureAdminApp());
 }

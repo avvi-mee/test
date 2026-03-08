@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getFirebaseAuth, getDb } from "@/lib/firebase";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { getDb } from "@/lib/firebase";
+import { type User } from "firebase/auth";
 import { doc, getDoc, getDocs, collection, query, where } from "firebase/firestore";
 import { can as canCheck, PermissionAction } from "@/lib/permissions";
+import { useAuth } from "./useAuth";
 
 export type UserType = "owner" | "employee" | "superadmin" | null;
 
@@ -67,23 +68,13 @@ async function resolveUserFromDb(user: User): Promise<ResolvedUser> {
 }
 
 export function useCurrentUser(): CurrentUser {
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    const auth = getFirebaseAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setFirebaseUser(u ?? null);
-      if (!u && typeof window !== "undefined") {
-        sessionStorage.removeItem("employeeSession");
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  const { user: firebaseUser, loading: authLoading } = useAuth();
 
   const { data: resolved, isLoading } = useQuery<ResolvedUser>({
     queryKey: ["current-user", firebaseUser?.uid],
     queryFn: () => resolveUserFromDb(firebaseUser!),
     enabled: !!firebaseUser?.uid,
+    staleTime: 5 * 60 * 1000,
   });
 
   const userType = resolved?.userType ?? null;
@@ -105,7 +96,7 @@ export function useCurrentUser(): CurrentUser {
     roles,
     employeeId,
     firebaseUser,
-    loading: firebaseUser === undefined ? true : isLoading,
+    loading: authLoading || isLoading,
     can,
   };
 }

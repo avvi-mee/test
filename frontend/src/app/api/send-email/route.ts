@@ -16,6 +16,8 @@ export async function POST(req: NextRequest) {
         leadName, clientEmail, estimatedValue,
         // project_assigned fields
         memberEmail, memberName, role, projectName,
+        // contract fields
+        to, contractTitle, contractNumber, signingUrl, partyBName, signedAt,
     } = await req.json();
 
     const transporter = nodemailer.createTransport({
@@ -129,6 +131,72 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: true });
         }
 
+        // ── Contract signing request: sent to partyB ──
+        if (type === "contract_signing") {
+            const recipient = to || email;
+            if (!recipient) {
+                return NextResponse.json({ success: false, error: "Missing recipient email" }, { status: 400 });
+            }
+            await transporter.sendMail({
+                from: `"${businessName}" <${process.env.GMAIL_USER}>`,
+                to: recipient,
+                subject: `${businessName} — Please sign: ${contractTitle || "Contract"}`,
+                html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;">
+                  <div style="background:linear-gradient(135deg,#0F172A,#1E293B);border-radius:12px;padding:24px;margin-bottom:24px;">
+                    <h2 style="color:#fff;margin:0;">Signature Requested</h2>
+                    <p style="color:#94A3B8;margin:8px 0 0;font-size:14px;">${businessName}</p>
+                  </div>
+                  <p style="color:#475569;font-size:16px;">Hi ${partyBName || "there"},</p>
+                  <p style="color:#475569;font-size:16px;">
+                    You have been sent a contract for review and signature:
+                  </p>
+                  <div style="background:#F8FAFC;border-radius:12px;padding:20px;margin:20px 0;">
+                    <p style="margin:0;color:#64748B;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;">Contract</p>
+                    <p style="margin:6px 0 0;color:#0F172A;font-size:18px;font-weight:700;">${contractTitle || "—"}</p>
+                    <p style="margin:4px 0 0;color:#94A3B8;font-size:13px;font-family:monospace;">${contractNumber || ""}</p>
+                  </div>
+                  <a href="${signingUrl}" style="display:inline-block;background:#4B56D2;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-weight:700;font-size:15px;margin:8px 0;">
+                    Review &amp; Sign Contract →
+                  </a>
+                  <p style="color:#94A3B8;font-size:13px;margin-top:24px;">
+                    This signing link will expire in 7 days. If you did not expect this email, please disregard it.
+                  </p>
+                </div>`,
+            });
+            return NextResponse.json({ success: true });
+        }
+
+        // ── Contract signed: notify studio owner ──
+        if (type === "contract_signed") {
+            const ownerRecipient = tenantEmail || email;
+            if (ownerRecipient) {
+                const formattedSignedAt = signedAt
+                    ? new Date(signedAt).toLocaleString("en-IN")
+                    : new Date().toLocaleString("en-IN");
+                await transporter.sendMail({
+                    from: `"${businessName} — Contracts" <${process.env.GMAIL_USER}>`,
+                    to: ownerRecipient,
+                    subject: `Contract signed: ${contractTitle || "Contract"}`,
+                    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;">
+                      <div style="background:linear-gradient(135deg,#0F172A,#1E293B);border-radius:12px;padding:24px;margin-bottom:24px;">
+                        <h2 style="color:#fff;margin:0;">Contract Signed!</h2>
+                        <p style="color:#94A3B8;margin:8px 0 0;font-size:14px;">${businessName}</p>
+                      </div>
+                      <p style="color:#475569;font-size:16px;">
+                        <strong>${partyBName || "The counterparty"}</strong> has signed the contract:
+                      </p>
+                      <div style="background:#F8FAFC;border-radius:12px;padding:20px;margin:20px 0;">
+                        <p style="margin:0;color:#64748B;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;">Contract</p>
+                        <p style="margin:6px 0 0;color:#0F172A;font-size:18px;font-weight:700;">${contractTitle || "—"}</p>
+                        <p style="margin:4px 0 0;color:#94A3B8;font-size:13px;">Signed at: ${formattedSignedAt}</p>
+                      </div>
+                      <p style="color:#475569;font-size:14px;">Log in to your Contracts dashboard to download the signed copy.</p>
+                    </div>`,
+                });
+            }
+            return NextResponse.json({ success: true });
+        }
+
         // ── Project assigned: notify employee ──
         if (type === "project_assigned") {
             if (!memberEmail) {
@@ -225,7 +293,7 @@ export async function POST(req: NextRequest) {
                                 <td style="padding: 12px 0; color: #64748B; font-size: 14px;
                                            border-bottom: 1px solid #F1F5F9;">Phone</td>
                                 <td style="padding: 12px 0; color: #0F172A; font-weight: 600;
-                                           border-bottom: 1px solid #F1F5F9;">+91 ${phone || "—"}</td>
+                                           border-bottom: 1px solid #F1F5F9;">${phone ? (phone.startsWith('+') ? phone : '+91 ' + phone) : '—'}</td>
                             </tr>
                             <tr>
                                 <td style="padding: 12px 0; color: #64748B; font-size: 14px;
