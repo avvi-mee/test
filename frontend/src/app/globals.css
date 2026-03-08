@@ -1,8 +1,149 @@
+/* ── Font imports ──────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap');
+
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — LIGHT (Apple/Notion inspired)
+   ═══════════════════════════════════════════════════════════════════════════ */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
+  /* ── Legacy compat (kept for existing pages) ────────────────────────── */
+  --white:        #FFFFFF;
+  --page:         #F5F5F7;
+  --card:         #FFFFFF;
+  --sidebar:      #111318;
+  --text-900:     #1D1D1F;
+  --text-700:     #3D3D3D;
+  --text-400:     #8A8A8A;
+  --text-200:     #C8C8C8;
+  --accent:       #0891B2;
+  --accent-light: #E0F9FF;
+  --accent-dark:  #0E7490;
+  --border:               rgba(0,0,0,0.08);
+  --border-hover:         rgba(0,0,0,0.16);
+  --shadow-card:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-hover: 0 4px 16px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-modal: 0 24px 48px rgba(0,0,0,0.14), 0 8px 16px rgba(0,0,0,0.08);
+  --shadow-sm:    var(--shadow-card);
+  --shadow-md:    var(--shadow-hover);
+  --shadow-lg:    var(--shadow-modal);
+  --background:   0 0% 100%;
+  --foreground:   222 47% 11%;
+  --bg-page:      #F5F5F7;
+  --bg-surface:   #FFFFFF;
+
+  /* ── Glass & Mesh (light) ───────────────────────────────────────────── */
+  --mesh-1:    rgba(186,230,253,0.5);   /* sky-200 */
+  --mesh-2:    rgba(167,243,208,0.4);   /* emerald-200 */
+  --mesh-3:    rgba(221,214,254,0.45);  /* violet-200 */
+  --mesh-base: #F5F5F7;
+
+  --glass:           rgba(255,255,255,0.78);
+  --glass-strong:    rgba(255,255,255,0.92);
+  --glass-border:    rgba(255,255,255,0.82);
+  --glass-border-in: rgba(0,0,0,0.07);
+  --glass-shadow:    0 2px 20px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
+  --glass-shadow-hov:0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+  --glass-blur:      saturate(180%) blur(24px);
+
+  /* ── Sidebar (light) ────────────────────────────────────────────────── */
+  --sb-bg:        rgba(255,255,255,0.80);
+  --sb-border:    rgba(0,0,0,0.06);
+  --sb-text:      #1D1D1F;
+  --sb-muted:     #8E8E93;
+  --sb-hover:     rgba(0,0,0,0.04);
+  --sb-active-bg: rgba(8,145,178,0.09);
+  --sb-active-fg: #0369A1;
+  --sb-active-bar:#0891B2;
+  --sb-icon:      #8E8E93;
+  --sb-icon-act:  #0891B2;
+  --sb-divider:   rgba(0,0,0,0.06);
+
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  --header-bg: rgba(245,245,247,0.85);
+
+  /* ── Typography ─────────────────────────────────────────────────────── */
+  --fg-900: #1D1D1F;
+  --fg-700: #3C3C43;
+  --fg-500: #6E6E73;
+  --fg-400: #8E8E93;
+  --fg-200: #D1D1D6;
+
+  /* ── Brand ──────────────────────────────────────────────────────────── */
+  --brand:        #0891B2;
+  --brand-dark:   #0E7490;
+  --brand-glow:   rgba(8,145,178,0.25);
+  --brand-bg:     rgba(8,145,178,0.08);
+  --brand-border: rgba(8,145,178,0.20);
+
+  /* ── Status ─────────────────────────────────────────────────────────── */
+  --green:    #16A34A;
+  --green-bg: rgba(22,163,74,0.08);
+  --red:      #DC2626;
+  --red-bg:   rgba(220,38,38,0.08);
+  --amber:    #D97706;
+  --amber-bg: rgba(217,119,6,0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK MODE — Notion/Kangaroo dark aesthetic
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --mesh-1:    rgba(20,20,20,0.8);
+  --mesh-2:    rgba(15,15,15,0.7);
+  --mesh-3:    rgba(25,25,25,0.6);
+  --mesh-base: #000000;
+
+  --glass:           rgba(255,255,255,0.05);
+  --glass-strong:    rgba(255,255,255,0.09);
+  --glass-border:    rgba(255,255,255,0.10);
+  --glass-border-in: rgba(255,255,255,0.07);
+  --glass-shadow:    0 2px 20px rgba(0,0,0,0.40), 0 1px 4px rgba(0,0,0,0.22);
+  --glass-shadow-hov:0 8px 32px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.30);
+
+  --sb-bg:        rgba(0,0,0,0.92);
+  --sb-border:    rgba(255,255,255,0.07);
+  --sb-text:      rgba(235,235,235,0.88);
+  --sb-muted:     rgba(235,235,235,0.38);
+  --sb-hover:     rgba(255,255,255,0.06);
+  --sb-active-bg: rgba(34,211,238,0.12);
+  --sb-active-fg: #22D3EE;
+  --sb-active-bar:#22D3EE;
+  --sb-icon:      rgba(235,235,235,0.32);
+  --sb-icon-act:  #22D3EE;
+  --sb-divider:   rgba(255,255,255,0.07);
+
+  --header-bg: rgba(0,0,0,0.85);
+
+  --fg-900: #EBEBEB;
+  --fg-700: rgba(235,235,235,0.76);
+  --fg-500: rgba(235,235,235,0.52);
+  --fg-400: rgba(235,235,235,0.38);
+  --fg-200: rgba(235,235,235,0.14);
+
+  --brand:        #22D3EE;
+  --brand-dark:   #06B6D4;
+  --brand-glow:   rgba(34,211,238,0.25);
+  --brand-bg:     rgba(34,211,238,0.09);
+  --brand-border: rgba(34,211,238,0.20);
+
+  --green:    #34D399;
+  --green-bg: rgba(52,211,153,0.10);
+  --red:      #F87171;
+  --red-bg:   rgba(248,113,113,0.10);
+  --amber:    #FCD34D;
+  --amber-bg: rgba(252,211,77,0.10);
+
+  /* Legacy overrides */
+  --text-900: #EBEBEB;
+  --text-700: rgba(235,235,235,0.76);
+  --text-400: rgba(235,235,235,0.38);
+  --bg-page:  #111111;
+  --bg-surface: rgba(255,255,255,0.05);
+  --border: rgba(255,255,255,0.07);
 }
 
 @theme {
@@ -10,7 +151,203 @@
   --color-foreground: hsl(var(--foreground));
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   BASE
+   ═══════════════════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
+
 body {
-  background: var(--color-background);
-  color: var(--color-foreground);
+  background: var(--mesh-base);
+  color: var(--fg-900);
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "tnum" off;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GLASS UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════ */
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border-in);
+  box-shadow: var(--glass-shadow);
+  transition: transform 0.24s cubic-bezier(0.16,1,0.3,1),
+              box-shadow 0.24s cubic-bezier(0.16,1,0.3,1),
+              border-color 0.24s ease;
+}
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow-hov);
+  border-color: var(--brand-border);
+}
+.glass-panel {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border-in);
+  box-shadow: var(--glass-shadow);
+  transition: box-shadow 0.24s ease, border-color 0.24s ease;
+}
+.glass-panel:hover { box-shadow: var(--glass-shadow-hov); }
+
+.glass-sidebar {
+  background: var(--sb-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--sb-border);
+}
+.glass-header {
+  background: var(--header-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border-in);
+}
+
+/* ── KPI Card variant (no hover lift, solid shadow) ─────────────────────── */
+.kpi-card {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border-in);
+  box-shadow: var(--glass-shadow);
+  transition: transform 0.22s cubic-bezier(0.16,1,0.3,1),
+              box-shadow 0.22s cubic-bezier(0.16,1,0.3,1),
+              border-color 0.22s ease;
+}
+.kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--glass-shadow-hov);
+  border-color: var(--brand-border);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TEXT / BG TOKEN CLASSES
+   ═══════════════════════════════════════════════════════════════════════════ */
+.text-fg-900 { color: var(--fg-900); }
+.text-fg-700 { color: var(--fg-700); }
+.text-fg-500 { color: var(--fg-500); }
+.text-fg-400 { color: var(--fg-400); }
+.text-fg-200 { color: var(--fg-200); }
+.text-brand  { color: var(--brand);  }
+.bg-glass    { background: var(--glass); }
+.bg-glass-strong { background: var(--glass-strong); }
+.bg-brand-soft   { background: var(--brand-bg); }
+.border-glass    { border-color: var(--glass-border-in); }
+.divide-glass > * + * { border-color: var(--glass-border-in); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME TRANSITION — smooth color changes
+   ═══════════════════════════════════════════════════════════════════════════ */
+.theme-transition {
+  transition:
+    background-color 0.30s ease,
+    color            0.30s ease,
+    border-color     0.30s ease,
+    box-shadow       0.30s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0);     }
+}
+@keyframes float {
+  0%,100% { transform: translate(0,0) scale(1);           }
+  33%     { transform: translate(20px,-16px) scale(1.04); }
+  66%     { transform: translate(-12px,10px) scale(0.97); }
+}
+@keyframes float2 {
+  0%,100% { transform: translate(0,0) scale(1);           }
+  33%     { transform: translate(-22px,14px) scale(1.03); }
+  66%     { transform: translate(16px,-12px) scale(0.98); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes shake {
+  0%,100% { transform: translateX(0);  }
+  20%     { transform: translateX(-6px);}
+  40%     { transform: translateX(6px); }
+  60%     { transform: translateX(-4px);}
+  80%     { transform: translateX(4px); }
+}
+@keyframes spinSlow {
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse-glow {
+  0%,100% { box-shadow: 0 0 0 0 var(--brand-glow);    }
+  50%     { box-shadow: 0 0 16px 4px var(--brand-glow); }
+}
+@keyframes number-roll {
+  from { opacity: 0; transform: translateY(8px);  }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* ── Animation utility classes ─────────────────────────────────────────── */
+.animate-fadeInUp  { animation: fadeInUp  0.55s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-fadeIn    { animation: fadeIn    0.40s ease both; }
+.animate-scaleIn   { animation: scaleIn   0.40s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-slideLeft { animation: slideLeft 0.45s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-float     { animation: float     24s ease-in-out infinite; }
+.animate-float2    { animation: float2    30s ease-in-out infinite; }
+.animate-shake     { animation: shake     0.5s ease-in-out; }
+.animate-spinSlow  { animation: spinSlow  8s linear infinite; }
+.animate-pulse-glow{ animation: pulse-glow 2.5s ease-in-out infinite; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SKELETON
+   ═══════════════════════════════════════════════════════════════════════════ */
+.skeleton-shimmer {
+  background: linear-gradient(90deg, var(--glass) 25%, var(--glass-strong) 50%, var(--glass) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SCROLLBAR — minimal Apple-style
+   ═══════════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar              { width: 5px; height: 5px; }
+::-webkit-scrollbar-track        { background: transparent; }
+::-webkit-scrollbar-thumb        { background: rgba(0,0,0,0.10); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover  { background: rgba(0,0,0,0.20); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb       { background: rgba(255,255,255,0.10); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.20); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MISC UTILS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.tabular-nums {
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smooth focus outline */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Selection color */
+::selection {
+  background: var(--brand-bg);
+  color: var(--fg-900);
 }
